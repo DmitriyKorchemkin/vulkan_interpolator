@@ -20,6 +20,11 @@ Foobar::Foobar() {
   instance = vk::createInstance(instanceCreateInfo);
   devices = instance.enumeratePhysicalDevices();
   std::cout << "Found " << devices.size() << " vulkan-devices" << std::endl;
+
+  for (auto& dev: devices) {
+     auto props = dev.getProperties() ;
+     std::cout << props.deviceID << " " << props.deviceName << " " << props.limits.maxMemoryAllocationCount / 1024./1024/1024 << "GB mem" << std::endl;
+  }
 }
 
 Foobar::~Foobar() { instance.destroy(); }
