@@ -21,9 +21,14 @@ Foobar::Foobar() {
   devices = instance.enumeratePhysicalDevices();
   std::cout << "Found " << devices.size() << " vulkan-devices" << std::endl;
 
-  for (auto& dev: devices) {
-     auto props = dev.getProperties() ;
-     std::cout << props.deviceID << " " << props.deviceName << " " << props.limits.maxMemoryAllocationCount / 1024./1024/1024 << "GB mem" << std::endl;
+  for (auto &dev : devices) {
+    auto props = dev.getProperties();
+    auto mem = dev.getMemoryProperties();
+    std::cout << props.deviceID << " " << props.deviceName << " "
+              << props.limits.maxMemoryAllocationCount / 1024. / 1024 / 1024
+              << "GB allocation" << std::endl;
+    for (int i = 0; i < mem.memoryHeapCount; ++i)
+      std::cout << "Heap: " << mem.memoryHeaps[i].size/1024/1024/1024 << std::endl;
   }
 }
 
