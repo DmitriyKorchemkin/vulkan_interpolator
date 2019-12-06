@@ -24,11 +24,13 @@ Foobar::Foobar() {
   for (auto &dev : devices) {
     auto props = dev.getProperties();
     auto mem = dev.getMemoryProperties();
-    std::cout << props.deviceID << " " << props.deviceName << " "
-              << props.limits.maxMemoryAllocationCount / 1024. / 1024 / 1024
-              << "GB allocation" << std::endl;
+    std::cout << props.deviceID << " " << props.deviceName << " ";
     for (int i = 0; i < mem.memoryHeapCount; ++i)
-      std::cout << "Heap: " << mem.memoryHeaps[i].size/1024/1024/1024 << std::endl;
+      if (mem.memoryHeaps[i].flags & vk::MemoryHeapFlagBits::eDeviceLocal) {
+        std::cout << "device heap: "
+                  << mem.memoryHeaps[i].size / 1024. / 1024 / 1024 << "GBytes"
+                  << std::endl;
+      }
   }
 }
 
