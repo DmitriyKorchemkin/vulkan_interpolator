@@ -6,6 +6,7 @@ struct Foobar {
   std::vector<vk::PhysicalDevice> devices;
 
   Foobar();
+  ~Foobar();
 };
 
 Foobar::Foobar() {
@@ -20,6 +21,8 @@ Foobar::Foobar() {
   devices = instance.enumeratePhysicalDevices();
   std::cout << "Found " << devices.size() << " vulkan-devices" << std::endl;
 }
+
+Foobar::~Foobar() { instance.destroy(); }
 
 int main(int argc, char **argv) {
   Foobar foobar;
