@@ -2,11 +2,13 @@
 
 #include "shaders.hpp"
 
+#include <chrono>
 #include <iomanip>
 #include <iostream>
 #include <set>
 #include <sstream>
-#include <chrono>
+
+#define FENCE
 
 static void key_callback(GLFWwindow *window, int key, int scancode, int action,
                          int mods) {
@@ -110,8 +112,118 @@ auto register_shader(const std::string_view &code, vk::Device &device) {
   info.pCode = reinterpret_cast<const uint32_t *>(code.data());
   return device.createShaderModuleUnique(info);
 }
+void Interpolator::createPoints() {
+  std::uniform_real_distribution<float> u01(0, 1), u11(-1, 1);
+
+  points.resize(N_TRI * 3 * 6);
+  int idx = 0;
+  for (auto &p : points) {
+    p = (idx++ % 6) < 3 ? u11(rng) : u01(rng);
+  }
+  indicies.resize(N_TRI * 3);
+  for (int i = 0; i < N_TRI * 3; ++i) indicies[i] = i;
+  stageData();
+}
+uint32_t Interpolator::findMemoryType(
+    uint32_t mask, const vk::MemoryPropertyFlags &properties) {
+  auto props = physicalDevice.getMemoryProperties();
+  for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
+    if ((mask & (1 << i)) &&
+        (props.memoryTypes[i].propertyFlags & properties) == properties)
+      return i;
+  }
+  throw std::runtime_error("Incompatible memory type");
+}
+Interpolator::BufferMem Interpolator::createBuffer(
+    size_t sz, const vk::BufferUsageFlags &usage,
+    const vk::MemoryPropertyFlags &flags) {
+  vk::BufferCreateInfo bufferInfo;
+  bufferInfo.size = sz;
+  bufferInfo.usage = usage;
+  bufferInfo.sharingMode = vk::SharingMode::eExclusive;
+
+  vk::UniqueBuffer buffer = device->createBufferUnique(bufferInfo);
+
+  vk::MemoryRequirements reqs = device->getBufferMemoryRequirements(*buffer);
+
+  vk::MemoryAllocateInfo allocInfo;
+  allocInfo.allocationSize = reqs.size;
+  allocInfo.memoryTypeIndex = findMemoryType(reqs.memoryTypeBits, flags);
+
+  vk::UniqueDeviceMemory mem = device->allocateMemoryUnique(allocInfo);
+  device->bindBufferMemory(*buffer, *mem, 0);
+  return std::make_pair(std::move(buffer), std::move(mem));
+}
+void Interpolator::createStagingBuffer() {
+  vk::DeviceSize size = PTS_SIZE + IDX_SIZE;
+  stagingBuffer = createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
+                               vk::MemoryPropertyFlagBits::eHostVisible |
+                                   vk::MemoryPropertyFlagBits::eHostCoherent);
+//  device->mapMemory(*stagingBuffer.second, 0, size, vk::MemoryMapFlags{},
+//                    &stagingData);
+
+
+  vk::CommandBufferAllocateInfo allocInfo;
+  allocInfo.level = vk::CommandBufferLevel::ePrimary;
+  allocInfo.commandPool = *commandPoolUnique;
+  allocInfo.commandBufferCount = 1;
+
+  auto foo  = device->allocateCommandBuffersUnique(allocInfo);
+  copyBuffer = std::move(foo[0]);
+
+  
+  vk::CommandBufferBeginInfo cbegin{};
+  copyBuffer->begin(&cbegin);
+    vk::BufferCopy regions[2];
+    regions[1].srcOffset = PTS_SIZE;
+    regions[0].srcOffset = 0;
+    regions[0].dstOffset = regions[1].dstOffset = 0;
+    regions[0].size = PTS_SIZE;
+    regions[1].size = IDX_SIZE;
+    std::cout << "Staging: " <<*stagingBuffer.first << std::endl;
+    std::cout << "Vertex: " << *vertexBuffer.first << std::endl;
+    std::cout << "Indexx: " << *indexBuffer.first << std::endl;
+    copyBuffer->copyBuffer(*stagingBuffer.first, *vertexBuffer.first, 1, regions);
+    copyBuffer->copyBuffer(*stagingBuffer.first, *indexBuffer.first, 1, regions+1);
+    copyBuffer->end();
+  
+
+}
+
+void Interpolator::stageData() {
+  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE+IDX_SIZE, vk::MemoryMapFlags{},
+                    &stagingData);
+  {
+  memcpy(stagingData, points.data(), PTS_SIZE);
+  }
+  {
+  memcpy((uint8_t*)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE);
+  }
+  device->unmapMemory(*stagingBuffer.second);
+}
+
+void Interpolator::createVertexBuffer() {
+  vertexBuffer = createBuffer(PTS_SIZE,
+                              vk::BufferUsageFlagBits::eVertexBuffer |
+                                  vk::BufferUsageFlagBits::eTransferDst,
+                              vk::MemoryPropertyFlagBits::eDeviceLocal);
+}
+
+void Interpolator::createIndexBuffer() {
+  indexBuffer = createBuffer(IDX_SIZE,
+                             vk::BufferUsageFlagBits::eIndexBuffer |
+                                 vk::BufferUsageFlagBits::eTransferDst,
+                             vk::MemoryPropertyFlagBits::eDeviceLocal);
+}
+
+Interpolator::~Interpolator() {
+//  device->unmapMemory(*stagingBuffer.second);
+  glfwDestroyWindow(window);
+  glfwTerminate();
+}
 
 Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
+
   (void)allowed_devices;
   std::cout << "Vertex shader: (" << shaders::shader_vert_spv.size()
             << " bytes)" << kernel2string(shaders::shader_vert_spv)
@@ -146,7 +258,7 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
                              glfwExtensionsVector.data()});
   auto physicalDevices = instance->enumeratePhysicalDevices();
 
-  auto physicalDevice = physicalDevices[0];
+  physicalDevice = physicalDevices[0];
   loadDebugUtilsCommands(*instance);
 
   messenger = instance->createDebugUtilsMessengerEXTUnique(
@@ -230,8 +342,8 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
       sharingModeUtil.sharingMode, sharingModeUtil.familyIndicesCount,
       sharingModeUtil.familyIndicesDataPtr,
       vk::SurfaceTransformFlagBitsKHR::eIdentity,
-      vk::CompositeAlphaFlagBitsKHR::eOpaque, vk::PresentModeKHR::eFifoRelaxed, true,
-      nullptr);
+      vk::CompositeAlphaFlagBitsKHR::eOpaque, vk::PresentModeKHR::eImmediate,
+      true, nullptr);
 
   swapChain = device->createSwapchainKHRUnique(swapChainCreateInfo);
 
@@ -269,8 +381,24 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
   auto pipelineShaderStages = std::vector<vk::PipelineShaderStageCreateInfo>{
       vertShaderStageInfo, fragShaderStageInfo};
 
+  vk::VertexInputBindingDescription vertexBinding;
+  vertexBinding.binding = 0;
+  vertexBinding.stride = sizeof(float) * 6;
+  vertexBinding.inputRate = vk::VertexInputRate::eVertex;
+
+  vk::VertexInputAttributeDescription vertexAttributes[] = {
+      {0, 0, vk::Format::eR32G32B32Sfloat, 0},
+      {1, 0, vk::Format::eR32G32B32Sfloat, 3 * sizeof(float)}};
+
+  vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+  vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
+  vertexInputInfo.pVertexBindingDescriptions = &vertexBinding;
+  vertexInputInfo.vertexAttributeDescriptionCount = 2;
+  vertexInputInfo.vertexBindingDescriptionCount = 1;
+#if 0
   auto vertexInputInfo =
       vk::PipelineVertexInputStateCreateInfo{{}, 0u, nullptr, 0u, nullptr};
+#endif
 
   auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{
       {}, vk::PrimitiveTopology::eTriangleList, false};
@@ -290,7 +418,7 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
       /*rasterizeDiscard*/ false,
       vk::PolygonMode::eFill,
       {},
-      /*frontFace*/ vk::FrontFace::eCounterClockwise,
+      /*frontFace*/ vk::FrontFace::eClockwise,
       {},
       {},
       {},
@@ -383,6 +511,10 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
   }
   commandPoolUnique = device->createCommandPoolUnique(
       {{}, static_cast<uint32_t>(graphicsQueueFamilyIndex)});
+  createVertexBuffer();
+  createIndexBuffer();
+  createStagingBuffer();
+
 
   commandBuffers =
       device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
@@ -400,22 +532,28 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
         vk::RenderPassBeginInfo{renderPass.get(), framebuffers[i].get(),
                                 vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
 
+    vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
+    commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
+    commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
+        
     commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
                                        vk::SubpassContents::eInline);
     commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
                                     pipeline.get());
-    commandBuffers[i]->draw(3, 1, 0, 0);
+
+
+    commandBuffers[i]->drawIndexed(N_TRI, 1, 0, 0, 0);
     commandBuffers[i]->endRenderPass();
     commandBuffers[i]->end();
   }
 }
 
 void Interpolator::run() {
-    vk::UniqueFence fence;
-    vk::FenceCreateInfo info;
-   fence = device->createFenceUnique(info);
-   auto start = std::chrono::high_resolution_clock::now();
-   int frames = 0;
+  vk::UniqueFence fence;
+  vk::FenceCreateInfo info;
+  fence = device->createFenceUnique(info);
+  auto start = std::chrono::high_resolution_clock::now();
+  int frames = 0;
   while (!glfwWindowShouldClose(window)) {
     glfwPollEvents();
     auto imageIndex = device->acquireNextImageKHR(
@@ -425,6 +563,38 @@ void Interpolator::run() {
     vk::PipelineStageFlags waitStageMask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
+
+//    std::cout << "Copying" << std::endl;
+#if 0
+    vk::SubmitInfo copyInfo;
+    copyInfo.commandBufferCount = 1;
+    copyInfo.pCommandBuffers = &*copyBuffer;
+    deviceQueue.submit(copyInfo, {});
+    deviceQueue.waitIdle();
+#endif
+#if 0
+    std::cout << "Rendering"<<std::endl;
+    std::cout << "Pts:" << std::endl;
+    for (int i = 0; i < N_TRI; ++i) {
+      std::cout << "---------------------------\n";
+      for (int j = 0; j < 3; ++j) {
+        for (int k = 0; k < 3; ++k)
+        std::cout << points[i*6*3 + j*6+k] << ' ';
+        std::cout << "| ";
+        for (int k = 3; k < 6; ++k)
+        std::cout << points[i*6*3 + j*6+k] << ' ';
+        std::cout << '\n';
+      }
+    }
+      std::cout << "---------------------------\n";
+      std::cout << "---------------------------\n";
+      for (auto& i: indicies)
+        std::cout << i << ' ';
+      std::cout << std::endl;
+#endif
+
+
+#if 0
     auto submitInfo = vk::SubmitInfo{1,
                                      &imageAvailableSemaphore.get(),
                                      &waitStageMask,
@@ -432,8 +602,19 @@ void Interpolator::run() {
                                      &commandBuffers[imageIndex.value].get(),
                                      1,
                                      &renderFinishedSemaphore.get()};
+#else
+    vk::CommandBuffer buffers[]{ *copyBuffer, *commandBuffers[imageIndex.value]};
+    vk::SubmitInfo submitInfo;
+    submitInfo.commandBufferCount = 2;
+    submitInfo.pCommandBuffers = buffers;
+    submitInfo.pSignalSemaphores = &*renderFinishedSemaphore;
+    submitInfo.pWaitSemaphores = &*imageAvailableSemaphore;
+    submitInfo.waitSemaphoreCount=1;
+    submitInfo.signalSemaphoreCount = 1;
+    submitInfo.pWaitDstStageMask = &waitStageMask;
+#endif
 
-//#define FENCE
+   
 #ifdef FENCE
     device->resetFences(1, &*fence);
     deviceQueue.submit(submitInfo, *fence);
@@ -445,22 +626,23 @@ void Interpolator::run() {
                                           &swapChain.get(), &imageIndex.value};
     presentQueue.presentKHR(presentInfo);
 
+    createPoints();
 #ifdef FENCE
-    device->waitForFences(1, &*fence, true, std::numeric_limits<uint64_t>::max());
+    device->waitForFences(1, &*fence, true,
+                          std::numeric_limits<uint64_t>::max());
 #else
     device->waitIdle();
 #endif
     ++frames;
-   auto stop = std::chrono::high_resolution_clock::now();
-   if (frames%1000==0) {
-     std::cout << "FPS: " <<  (frames * 1e9 / (stop - start).count()) << std::endl;
-   }
+//    break;
+    auto stop = std::chrono::high_resolution_clock::now();
+    if (frames % 10 == 0) {
+      std::cout << "FPS: " << (frames * 1e9 / (stop - start).count())
+                << std::endl;
+    }
+//    break;
   }
 }
 
-Interpolator::~Interpolator() {
-  glfwDestroyWindow(window);
-  glfwTerminate();
-}
 
 }  // namespace vulkan_interpolator

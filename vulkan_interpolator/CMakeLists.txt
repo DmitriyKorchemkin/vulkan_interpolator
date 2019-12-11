@@ -5,7 +5,7 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(vulkan_interpolator Vulkan::Vulkan glfw)
+target_link_libraries(vulkan_interpolator Vulkan::Vulkan glfw delaunator)
 
 set(CMAKE_GLSLC /home/dka/vulkan/1.1.126.0/x86_64/bin/glslc)
 

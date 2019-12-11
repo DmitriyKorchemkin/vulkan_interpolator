@@ -2,6 +2,7 @@
 #define VULKAN_INTERPOLATOR
 
 #include <vector>
+#include <random>
 #include <vulkan/vulkan.hpp>
 #define GLFW_INCLUDE_VULKAN
 #include <GLFW/glfw3.h>
@@ -27,12 +28,37 @@ struct Interpolator {
     vk::UniqueCommandPool commandPoolUnique;
     vk::Queue presentQueue, deviceQueue;
     std::vector<vk::UniqueCommandBuffer> commandBuffers;
+    vk::UniqueCommandBuffer copyBuffer;
+   vk::PhysicalDevice physicalDevice;
+   using BufferMem = 
+   std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory>;
+  BufferMem vertexBuffer, indexBuffer, stagingBuffer;
+  void* stagingData;
+    
 
   Interpolator(const std::vector<size_t> &devices);
   ~Interpolator();
   void run();
 
 private:
+  const int N_TRI = 40000;
+  const int PTS_SIZE = 6 * 3 * N_TRI * sizeof(float);
+  const int IDX_SIZE = 3 * N_TRI * sizeof(uint32_t);
+  std::vector<float> points;
+  std::vector<int> indicies;
+  std::mt19937 rng;
+
+  void createPoints();
+
+  BufferMem
+  createBuffer(size_t sz, const vk::BufferUsageFlags &usage, const  vk::MemoryPropertyFlags &flags);
+  void createVertexBuffer();
+  void createIndexBuffer();
+  void createStagingBuffer();
+  void stageData();
+
+  uint32_t findMemoryType(uint32_t mask,  const vk::MemoryPropertyFlags &properties);
+
   std::vector<const char *> required_extensions = {
       VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 };
