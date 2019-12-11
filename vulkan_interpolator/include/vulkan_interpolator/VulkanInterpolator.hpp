@@ -10,8 +10,8 @@
 namespace vulkan_interpolator {
 
 struct Interpolator {
-    static const uint32_t width = 800;
-    static const uint32_t height = 600;
+    static const uint32_t width = 3500;
+    static const uint32_t height = 2000;
     GLFWwindow* window;
     vk::UniqueInstance instance;
     vk::UniqueDebugUtilsMessengerEXT messenger;
@@ -41,9 +41,12 @@ struct Interpolator {
   void run();
 
 private:
-  const int N_TRI = 40000;
-  const int PTS_SIZE = 6 * 3 * N_TRI * sizeof(float);
-  const int IDX_SIZE = 3 * N_TRI * sizeof(uint32_t);
+  const int N_PTS = 1000;
+  const int PTS_SIZE = 6 * N_PTS * sizeof(float);
+  int nTris = 0;
+  const size_t IDX_MAX_CNT = 30*N_PTS;
+  const size_t IDX_MAX_SIZE = IDX_MAX_CNT* sizeof(uint32_t);
+  
   std::vector<float> points;
   std::vector<int> indicies;
   std::mt19937 rng;

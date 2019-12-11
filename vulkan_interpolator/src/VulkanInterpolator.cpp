@@ -8,6 +8,8 @@
 #include <set>
 #include <sstream>
 
+#include <delaunator.hpp>
+
 #define FENCE
 
 static void key_callback(GLFWwindow *window, int key, int scancode, int action,
@@ -115,13 +117,37 @@ auto register_shader(const std::string_view &code, vk::Device &device) {
 void Interpolator::createPoints() {
   std::uniform_real_distribution<float> u01(0, 1), u11(-1, 1);
 
-  points.resize(N_TRI * 3 * 6);
+  points.resize(N_PTS * 6);
   int idx = 0;
+  std::vector<double> coords;
   for (auto &p : points) {
-    p = (idx++ % 6) < 3 ? u11(rng) : u01(rng);
+
+    p = (idx % 6) < 3 ? u11(rng)  : u01(rng);
+    if (idx % 6 == 1) {
+      coords.push_back(points[idx - 1]);
+      coords.push_back(points[idx]);
+    }
+    ++idx;
   }
-  indicies.resize(N_TRI * 3);
-  for (int i = 0; i < N_TRI * 3; ++i) indicies[i] = i;
+  std::cout << "Delaunator: " << std::endl;
+  delaunator::Delaunator d(coords);
+  if (d.triangles.size() > IDX_MAX_CNT) {
+    std::cout << "FUCKED UP!" << std::endl;
+    exit(-1);
+  }
+  nTris = d.triangles.size() / 3;
+  std::cout << "Triangles: " << nTris << std::endl;
+
+
+
+  indicies.resize(nTris * 3);
+  for (int i = 0; i < nTris; ++i) {
+    for (int j = 2; j >=0; --j) {
+    indicies[i*3+j]=i*3+j;// = d.triangles[i*3+j];
+    }
+//    std::cout << indicies[i] << ' ';
+  }
+    std::cout << std::endl;
   stageData();
 }
 uint32_t Interpolator::findMemoryType(
@@ -155,7 +181,7 @@ Interpolator::BufferMem Interpolator::createBuffer(
   return std::make_pair(std::move(buffer), std::move(mem));
 }
 void Interpolator::createStagingBuffer() {
-  vk::DeviceSize size = PTS_SIZE + IDX_SIZE;
+  vk::DeviceSize size = PTS_SIZE + IDX_MAX_SIZE;
   stagingBuffer = createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
                                vk::MemoryPropertyFlagBits::eHostVisible |
                                    vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -179,10 +205,7 @@ void Interpolator::createStagingBuffer() {
     regions[0].srcOffset = 0;
     regions[0].dstOffset = regions[1].dstOffset = 0;
     regions[0].size = PTS_SIZE;
-    regions[1].size = IDX_SIZE;
-    std::cout << "Staging: " <<*stagingBuffer.first << std::endl;
-    std::cout << "Vertex: " << *vertexBuffer.first << std::endl;
-    std::cout << "Indexx: " << *indexBuffer.first << std::endl;
+    regions[1].size = IDX_MAX_SIZE;
     copyBuffer->copyBuffer(*stagingBuffer.first, *vertexBuffer.first, 1, regions);
     copyBuffer->copyBuffer(*stagingBuffer.first, *indexBuffer.first, 1, regions+1);
     copyBuffer->end();
@@ -191,7 +214,8 @@ void Interpolator::createStagingBuffer() {
 }
 
 void Interpolator::stageData() {
-  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE+IDX_SIZE, vk::MemoryMapFlags{},
+  int IDX_SIZE = nTris * 3 * sizeof(int);
+  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE+IDX_MAX_SIZE, vk::MemoryMapFlags{},
                     &stagingData);
   {
   memcpy(stagingData, points.data(), PTS_SIZE);
@@ -210,7 +234,7 @@ void Interpolator::createVertexBuffer() {
 }
 
 void Interpolator::createIndexBuffer() {
-  indexBuffer = createBuffer(IDX_SIZE,
+  indexBuffer = createBuffer(IDX_MAX_SIZE,
                              vk::BufferUsageFlagBits::eIndexBuffer |
                                  vk::BufferUsageFlagBits::eTransferDst,
                              vk::MemoryPropertyFlagBits::eDeviceLocal);
@@ -542,7 +566,7 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
                                     pipeline.get());
 
 
-    commandBuffers[i]->drawIndexed(N_TRI, 1, 0, 0, 0);
+    commandBuffers[i]->drawIndexed(nTris, 1, 0, 0, 0);
     commandBuffers[i]->endRenderPass();
     commandBuffers[i]->end();
   }
