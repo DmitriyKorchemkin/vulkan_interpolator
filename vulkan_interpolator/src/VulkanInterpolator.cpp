@@ -122,13 +122,15 @@ void Interpolator::createPoints() {
   std::vector<double> coords;
   for (auto &p : points) {
 
-    p = (idx % 6) < 3 ? u11(rng)  : u01(rng);
+    p = (idx % 6) < 3 ?((idx % 6) < 2 ? u11(rng) : 1.f)  : u01(rng);
     if (idx % 6 == 1) {
       coords.push_back(points[idx - 1]);
       coords.push_back(points[idx]);
     }
     ++idx;
   }
+
+  auto dstart = std::chrono::high_resolution_clock::now();
   std::cout << "Delaunator: " << std::endl;
   delaunator::Delaunator d(coords);
   if (d.triangles.size() > IDX_MAX_CNT) {
@@ -142,13 +144,28 @@ void Interpolator::createPoints() {
 
   indicies.resize(nTris * 3);
   for (int i = 0; i < nTris; ++i) {
-    for (int j = 2; j >=0; --j) {
-    indicies[i*3+j]=i*3+j;// = d.triangles[i*3+j];
+    for (int j = 0; j <3; ++j) {
+    indicies[i*3+j]= d.triangles[i*3+j];
+
     }
+    double x0 = points[indicies[3*i]*6];
+    double y0 = points[indicies[3*i]*6+1];
+    double x1 = points[indicies[3*i+1]*6];
+    double y1 = points[indicies[3*i+1]*6+1];
+    double x2 = points[indicies[3*i+2]*6];
+    double y2 = points[indicies[3*i+2]*6+1];
+    double dx1 = x1 - x0;
+    double dy1 = y1 - y0;
+    double dx2 = x2 - x0;
+    double dy2 = y2 - y0;
+    double det = dx1*dy2-dx2*dy1;
+    if (det > 0)
+      std::swap(indicies[3*i], indicies[3*i+1]);
 //    std::cout << indicies[i] << ' ';
   }
-    std::cout << std::endl;
   stageData();
+  auto dstop = std::chrono::high_resolution_clock::now();
+  std::cout << "D: " << (1e9 / (dstop - dstart).count()) << std::endl;
 }
 uint32_t Interpolator::findMemoryType(
     uint32_t mask, const vk::MemoryPropertyFlags &properties) {
@@ -534,7 +551,7 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
         {}, *renderPass, 1, &(*imageViews[i]), extent.width, extent.height, 1});
   }
   commandPoolUnique = device->createCommandPoolUnique(
-      {{}, static_cast<uint32_t>(graphicsQueueFamilyIndex)});
+      {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, static_cast<uint32_t>(graphicsQueueFamilyIndex)});
   createVertexBuffer();
   createIndexBuffer();
   createStagingBuffer();
@@ -627,15 +644,44 @@ void Interpolator::run() {
                                      1,
                                      &renderFinishedSemaphore.get()};
 #else
+  auto extent = vk::Extent2D{width, height};
+  for (size_t i = 0; i < commandBuffers.size(); i++) {
+    auto beginInfo = vk::CommandBufferBeginInfo{};
+    commandBuffers[i]->begin(beginInfo);
+    vk::ClearValue clearValues{};
+    auto renderPassBeginInfo =
+        vk::RenderPassBeginInfo{renderPass.get(), framebuffers[i].get(),
+                                vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
+
+    vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
+    commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
+    commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
+        
+    commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
+                                       vk::SubpassContents::eInline);
+    commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                    pipeline.get());
+
+
+    commandBuffers[i]->drawIndexed(nTris*3, 1, 0, 0, 0);
+    commandBuffers[i]->endRenderPass();
+    commandBuffers[i]->end();
+  }
     vk::CommandBuffer buffers[]{ *copyBuffer, *commandBuffers[imageIndex.value]};
+    
     vk::SubmitInfo submitInfo;
-    submitInfo.commandBufferCount = 2;
-    submitInfo.pCommandBuffers = buffers;
     submitInfo.pSignalSemaphores = &*renderFinishedSemaphore;
     submitInfo.pWaitSemaphores = &*imageAvailableSemaphore;
     submitInfo.waitSemaphoreCount=1;
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pWaitDstStageMask = &waitStageMask;
+    if (frames % 100 == 0) {
+    submitInfo.commandBufferCount = 2;
+    submitInfo.pCommandBuffers = buffers;
+    } else {
+    submitInfo.commandBufferCount = 1;
+    submitInfo.pCommandBuffers = buffers+1;
+    }
 #endif
 
    
@@ -650,7 +696,9 @@ void Interpolator::run() {
                                           &swapChain.get(), &imageIndex.value};
     presentQueue.presentKHR(presentInfo);
 
+    if ((frames +1) % 100 == 0) {
     createPoints();
+    }
 #ifdef FENCE
     device->waitForFences(1, &*fence, true,
                           std::numeric_limits<uint64_t>::max());
@@ -660,7 +708,7 @@ void Interpolator::run() {
     ++frames;
 //    break;
     auto stop = std::chrono::high_resolution_clock::now();
-    if (frames % 10 == 0) {
+    if (frames % 1000 == 0) {
       std::cout << "FPS: " << (frames * 1e9 / (stop - start).count())
                 << std::endl;
     }
