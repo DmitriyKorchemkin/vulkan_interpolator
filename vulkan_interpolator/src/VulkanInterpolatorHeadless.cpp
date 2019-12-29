@@ -652,6 +652,7 @@ void HeadlessInterpolator::run() {
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
     while(true) {
+    createPoints();
   auto extent = vk::Extent2D{width, height};
   for (size_t i = 0; i < commandBuffers.size(); i++) {
     auto beginInfo = vk::CommandBufferBeginInfo{};
@@ -683,15 +684,16 @@ void HeadlessInterpolator::run() {
     submitInfo.waitSemaphoreCount=0;
     submitInfo.signalSemaphoreCount = 0;
     submitInfo.pWaitDstStageMask = &waitStageMask;
-    submitInfo.commandBufferCount = 2;
+    submitInfo.commandBufferCount = 3;
     submitInfo.pCommandBuffers = buffers;
 
    
 #ifdef FENCE
     device->resetFences(1, &*fence);
     deviceQueue.submit(submitInfo, *fence);
-
+#if 0
     device->waitForFences(1, &*fence, true, std::numeric_limits<uint64_t>::max());
+
     device->resetFences(1, &*fence);
     {
       vk::SubmitInfo copyBack;
@@ -699,13 +701,13 @@ void HeadlessInterpolator::run() {
       copyBack.pCommandBuffers = buffers + 2;
       deviceQueue.submit(copyBack, *fence);
     }
+#endif
 #else
     deviceQueue.submit(submitInfo, {});
 #endif
 
 
 //  if ((frames +1) % 100 == 0) {
-    createPoints();
  // }
 #ifdef FENCE
     device->waitForFences(1, &*fence, true,
