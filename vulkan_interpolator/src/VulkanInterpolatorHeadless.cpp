@@ -3,9 +3,9 @@
 #include "shaders.hpp"
 
 #include <chrono>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <fstream>
 #include <set>
 #include <sstream>
 
@@ -25,7 +25,8 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
             << "|"
             << vk::to_string((vk::DebugUtilsMessageTypeFlagBitsEXT)messageType)
             << "]: " << pCallbackData->pMessage << std::endl;
-  if ((vk::DebugUtilsMessageSeverityFlagBitsEXT)messageSeverity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
+  if ((vk::DebugUtilsMessageSeverityFlagBitsEXT)messageSeverity ==
+      vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
     exit(-1);
   return VK_FALSE;
 }
@@ -42,25 +43,25 @@ void loadDebugUtilsCommands(VkInstance instance) {
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkCreateDebugUtilsMessengerEXT";  // check shouldn't
-                                                            // be necessary
-                                                            // (based on spec)
+    throw "Failed to load vkCreateDebugUtilsMessengerEXT"; // check shouldn't
+                                                           // be necessary
+                                                           // (based on spec)
   CreateDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkDestroyDebugUtilsMessengerEXT";  // check shouldn't
-                                                             // be necessary
-                                                             // (based on spec)
+    throw "Failed to load vkDestroyDebugUtilsMessengerEXT"; // check shouldn't
+                                                            // be necessary
+                                                            // (based on spec)
   DestroyDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT");
   if (!temp_fp)
-    throw "Failed to load vkSubmitDebugUtilsMessageEXT";  // check shouldn't be
-                                                          // necessary (based on
-                                                          // spec)
+    throw "Failed to load vkSubmitDebugUtilsMessageEXT"; // check shouldn't be
+                                                         // necessary (based on
+                                                         // spec)
   SubmitDebugUtilsMessageEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkSubmitDebugUtilsMessageEXT>(temp_fp);
 }
@@ -110,13 +111,12 @@ auto register_shader(const std::string_view &code, vk::Device &device) {
 }
 void HeadlessInterpolator::createPoints() {
   std::uniform_real_distribution<float> u01(0, 1), u11(-1, 1);
-
   points.resize(N_PTS * 6);
   int idx = 0;
   std::vector<double> coords;
   for (auto &p : points) {
 
-    p = (idx % 6) < 3 ?((idx % 6) < 2 ? u11(rng) : 1.f)  : u01(rng);
+    p = (idx % 6) < 3 ? ((idx % 6) < 2 ? u11(rng) : 1.f) : u01(rng);
     if (idx % 6 == 1) {
       coords.push_back(points[idx - 1]);
       coords.push_back(points[idx]);
@@ -134,28 +134,25 @@ void HeadlessInterpolator::createPoints() {
   nTris = d.triangles.size() / 3;
   std::cout << "Triangles: " << nTris << std::endl;
 
-
-
   indicies.resize(nTris * 3);
   for (int i = 0; i < nTris; ++i) {
-    for (int j = 0; j <3; ++j) {
-    indicies[i*3+j]= d.triangles[i*3+j];
-
+    for (int j = 0; j < 3; ++j) {
+      indicies[i * 3 + j] = d.triangles[i * 3 + j];
     }
-    double x0 = points[indicies[3*i]*6];
-    double y0 = points[indicies[3*i]*6+1];
-    double x1 = points[indicies[3*i+1]*6];
-    double y1 = points[indicies[3*i+1]*6+1];
-    double x2 = points[indicies[3*i+2]*6];
-    double y2 = points[indicies[3*i+2]*6+1];
+    double x0 = points[indicies[3 * i] * 6];
+    double y0 = points[indicies[3 * i] * 6 + 1];
+    double x1 = points[indicies[3 * i + 1] * 6];
+    double y1 = points[indicies[3 * i + 1] * 6 + 1];
+    double x2 = points[indicies[3 * i + 2] * 6];
+    double y2 = points[indicies[3 * i + 2] * 6 + 1];
     double dx1 = x1 - x0;
     double dy1 = y1 - y0;
     double dx2 = x2 - x0;
     double dy2 = y2 - y0;
-    double det = dx1*dy2-dx2*dy1;
+    double det = dx1 * dy2 - dx2 * dy1;
     if (det > 0)
-      std::swap(indicies[3*i], indicies[3*i+1]);
-//    std::cout << indicies[i] << ' ';
+      std::swap(indicies[3 * i], indicies[3 * i + 1]);
+    //    std::cout << indicies[i] << ' ';
   }
   stageData();
   auto dstop = std::chrono::high_resolution_clock::now();
@@ -171,9 +168,9 @@ uint32_t HeadlessInterpolator::findMemoryType(
   }
   throw std::runtime_error("Incompatible memory type");
 }
-HeadlessInterpolator::BufferMem HeadlessInterpolator::createBuffer(
-    size_t sz, const vk::BufferUsageFlags &usage,
-    const vk::MemoryPropertyFlags &flags) {
+HeadlessInterpolator::BufferMem
+HeadlessInterpolator::createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
+                                   const vk::MemoryPropertyFlags &flags) {
   vk::BufferCreateInfo bufferInfo;
   bufferInfo.size = sz;
   bufferInfo.usage = usage;
@@ -196,44 +193,37 @@ void HeadlessInterpolator::createStagingBuffer() {
   stagingBuffer = createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
                                vk::MemoryPropertyFlagBits::eHostVisible |
                                    vk::MemoryPropertyFlagBits::eHostCoherent);
-//  device->mapMemory(*stagingBuffer.second, 0, size, vk::MemoryMapFlags{},
-//                    &stagingData);
-
+  //  device->mapMemory(*stagingBuffer.second, 0, size, vk::MemoryMapFlags{},
+  //                    &stagingData);
 
   vk::CommandBufferAllocateInfo allocInfo;
   allocInfo.level = vk::CommandBufferLevel::ePrimary;
   allocInfo.commandPool = *commandPoolUnique;
   allocInfo.commandBufferCount = 1;
 
-  auto foo  = device->allocateCommandBuffersUnique(allocInfo);
+  auto foo = device->allocateCommandBuffersUnique(allocInfo);
   copyBuffer = std::move(foo[0]);
 
-  
   vk::CommandBufferBeginInfo cbegin{};
   copyBuffer->begin(&cbegin);
-    vk::BufferCopy regions[2];
-    regions[1].srcOffset = PTS_SIZE;
-    regions[0].srcOffset = 0;
-    regions[0].dstOffset = regions[1].dstOffset = 0;
-    regions[0].size = PTS_SIZE;
-    regions[1].size = IDX_MAX_SIZE;
-    copyBuffer->copyBuffer(*stagingBuffer.first, *vertexBuffer.first, 1, regions);
-    copyBuffer->copyBuffer(*stagingBuffer.first, *indexBuffer.first, 1, regions+1);
-    copyBuffer->end();
-  
-
+  vk::BufferCopy regions[2];
+  regions[1].srcOffset = PTS_SIZE;
+  regions[0].srcOffset = 0;
+  regions[0].dstOffset = regions[1].dstOffset = 0;
+  regions[0].size = PTS_SIZE;
+  regions[1].size = IDX_MAX_SIZE;
+  copyBuffer->copyBuffer(*stagingBuffer.first, *vertexBuffer.first, 1, regions);
+  copyBuffer->copyBuffer(*stagingBuffer.first, *indexBuffer.first, 1,
+                         regions + 1);
+  copyBuffer->end();
 }
 
 void HeadlessInterpolator::stageData() {
   int IDX_SIZE = nTris * 3 * sizeof(int);
-  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE+IDX_MAX_SIZE, vk::MemoryMapFlags{},
-                    &stagingData);
-  {
-  memcpy(stagingData, points.data(), PTS_SIZE);
-  }
-  {
-  memcpy((uint8_t*)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE);
-  }
+  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE + IDX_MAX_SIZE,
+                    vk::MemoryMapFlags{}, &stagingData);
+  { memcpy(stagingData, points.data(), N_PTS * 6 * sizeof(float)); }
+  { memcpy((uint8_t *)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE); }
   device->unmapMemory(*stagingBuffer.second);
 }
 
@@ -252,10 +242,11 @@ void HeadlessInterpolator::createIndexBuffer() {
 }
 
 HeadlessInterpolator::~HeadlessInterpolator() {
-//  device->unmapMemory(*stagingBuffer.second);
+  //  device->unmapMemory(*stagingBuffer.second);
 }
 
-HeadlessInterpolator::HeadlessInterpolator(const std::vector<size_t> &allowed_devices) {
+HeadlessInterpolator::HeadlessInterpolator(
+    const std::vector<size_t> &allowed_devices) {
 
   (void)allowed_devices;
   std::cout << "Vertex shader: (" << shaders::shader_vert_spv.size()
@@ -312,19 +303,18 @@ HeadlessInterpolator::HeadlessInterpolator(const std::vector<size_t> &allowed_de
   std::vector<vk::DeviceQueueCreateInfo> queueCreateInfos;
 
   float queuePriority = 0.0f;
-  for (int queueFamilyIndex : FamilyIndices){
+  for (int queueFamilyIndex : FamilyIndices) {
     queueCreateInfos.push_back(vk::DeviceQueueCreateInfo{
         vk::DeviceQueueCreateFlags(), static_cast<uint32_t>(queueFamilyIndex),
         1, &queuePriority});
   }
 
-  device = physicalDevice.createDeviceUnique(vk::DeviceCreateInfo(
-      vk::DeviceCreateFlags(), queueCreateInfos.size(), queueCreateInfos.data(),
-      0, nullptr, 0, nullptr));
+  device = physicalDevice.createDeviceUnique(
+      vk::DeviceCreateInfo(vk::DeviceCreateFlags(), queueCreateInfos.size(),
+                           queueCreateInfos.data(), 0, nullptr, 0, nullptr));
 
   auto format = vk::Format::eR8G8B8A8Unorm;
   auto extent = vk::Extent2D{width, height};
-
 
   auto vertShaderCreateInfo = vk::ShaderModuleCreateInfo{
       {},
@@ -434,16 +424,14 @@ HeadlessInterpolator::HeadlessInterpolator(const std::vector<size_t> &allowed_de
   imageAvailableSemaphore = device->createSemaphoreUnique(semaphoreCreateInfo);
   renderFinishedSemaphore = device->createSemaphoreUnique(semaphoreCreateInfo);
 
-  std::array<vk::SubpassDependency, 1> subpassDependency =
-  {
-      vk::SubpassDependency{VK_SUBPASS_EXTERNAL,
-                            0,
+  std::array<vk::SubpassDependency, 1> subpassDependency = {
+      vk::SubpassDependency{VK_SUBPASS_EXTERNAL, 0,
                             vk::PipelineStageFlagBits::eBottomOfPipe,
                             vk::PipelineStageFlagBits::eColorAttachmentOutput,
                             vk::AccessFlagBits::eMemoryRead,
                             vk::AccessFlagBits::eColorAttachmentRead |
                                 vk::AccessFlagBits::eColorAttachmentWrite,
-      vk::DependencyFlagBits::eByRegion},
+                            vk::DependencyFlagBits::eByRegion},
   };
 
   renderPass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
@@ -477,65 +465,66 @@ HeadlessInterpolator::HeadlessInterpolator(const std::vector<size_t> &allowed_de
     imageInfo.extent.depth = 1;
     imageInfo.mipLevels = 1;
     imageInfo.arrayLayers = 1;
-    imageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransferSrc;
+    imageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment |
+                      vk::ImageUsageFlagBits::eTransferSrc;
     image = device->createImageUnique(imageInfo);
-  
+
     vk::MemoryRequirements reqs = device->getImageMemoryRequirements(*image);
-  vk::MemoryAllocateInfo outAllocInfo;
-  outAllocInfo.allocationSize = reqs.size;
-  outAllocInfo.memoryTypeIndex = findMemoryType(reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
-  renderMem = device->allocateMemoryUnique(outAllocInfo);
-  device->bindImageMemory(*image, *renderMem, 0);
+    vk::MemoryAllocateInfo outAllocInfo;
+    outAllocInfo.allocationSize = reqs.size;
+    outAllocInfo.memoryTypeIndex = findMemoryType(
+        reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    renderMem = device->allocateMemoryUnique(outAllocInfo);
+    device->bindImageMemory(*image, *renderMem, 0);
 
     vk::ImageViewCreateInfo viewInfo;
     viewInfo.viewType = vk::ImageViewType::e2D;
     viewInfo.format = vk::Format::eR8G8B8A8Unorm;
     viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount =1;
+    viewInfo.subresourceRange.levelCount = 1;
     viewInfo.subresourceRange.baseArrayLayer = 0;
     viewInfo.subresourceRange.layerCount = 1;
     viewInfo.image = *image;
     imageView = device->createImageViewUnique(viewInfo);
   }
 
-    framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-        {}, *renderPass, 1, &(*imageView), extent.width, extent.height, 1});
+  framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
+      {}, *renderPass, 1, &(*imageView), extent.width, extent.height, 1});
 
   commandPoolUnique = device->createCommandPoolUnique(
-      {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, static_cast<uint32_t>(graphicsQueueFamilyIndex)});
+      {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+       static_cast<uint32_t>(graphicsQueueFamilyIndex)});
   createVertexBuffer();
   createIndexBuffer();
   createStagingBuffer();
 
-
   commandBuffers =
       device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-          commandPoolUnique.get(), vk::CommandBufferLevel::ePrimary,
-          1));
+          commandPoolUnique.get(), vk::CommandBufferLevel::ePrimary, 1));
 
   deviceQueue = device->getQueue(graphicsQueueFamilyIndex, 0);
 
-    auto beginInfo = vk::CommandBufferBeginInfo{};
-    commandBuffers[0]->begin(beginInfo);
-    vk::ClearValue clearValues{};
-    auto renderPassBeginInfo =
-        vk::RenderPassBeginInfo{renderPass.get(), *framebuffer,
-                                vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
+  auto beginInfo = vk::CommandBufferBeginInfo{};
+  commandBuffers[0]->begin(beginInfo);
+  vk::ClearValue clearValues{};
+  auto renderPassBeginInfo =
+      vk::RenderPassBeginInfo{renderPass.get(), *framebuffer,
+                              vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
 
-    vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-    commandBuffers[0]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
-    commandBuffers[0]->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
-        
-    commandBuffers[0]->beginRenderPass(renderPassBeginInfo,
-                                       vk::SubpassContents::eInline);
-    commandBuffers[0]->bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                    pipeline.get());
+  vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
+  commandBuffers[0]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
+  commandBuffers[0]->bindIndexBuffer(*indexBuffer.first, 0,
+                                     vk::IndexType::eUint32);
 
+  commandBuffers[0]->beginRenderPass(renderPassBeginInfo,
+                                     vk::SubpassContents::eInline);
+  commandBuffers[0]->bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                  pipeline.get());
 
-    commandBuffers[0]->drawIndexed(nTris, 1, 0, 0, 0);
-    commandBuffers[0]->endRenderPass();
-    commandBuffers[0]->end();
+  commandBuffers[0]->drawIndexed(nTris, 1, 0, 0, 0);
+  commandBuffers[0]->endRenderPass();
+  commandBuffers[0]->end();
 
   vk::ImageCreateInfo imgInfo;
   imgInfo.imageType = vk::ImageType::e2D;
@@ -550,15 +539,15 @@ HeadlessInterpolator::HeadlessInterpolator(const std::vector<size_t> &allowed_de
   imgInfo.usage = vk::ImageUsageFlagBits::eTransferDst;
 
   outputImage = device->createImageUnique(imgInfo);
-  vk::MemoryRequirements reqs = device->getImageMemoryRequirements(*outputImage);
+  vk::MemoryRequirements reqs =
+      device->getImageMemoryRequirements(*outputImage);
   vk::MemoryAllocateInfo outAllocInfo;
   outAllocInfo.allocationSize = reqs.size;
-  outAllocInfo.memoryTypeIndex = findMemoryType(reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+  outAllocInfo.memoryTypeIndex = findMemoryType(
+      reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+                               vk::MemoryPropertyFlagBits::eHostCoherent);
   outputMem = device->allocateMemoryUnique(outAllocInfo);
   device->bindImageMemory(*outputImage, *outputMem, 0);
-
-
-
 
   vk::CommandBufferAllocateInfo allocInfo;
   allocInfo.level = vk::CommandBufferLevel::ePrimary;
@@ -587,56 +576,66 @@ HeadlessInterpolator::HeadlessInterpolator(const std::vector<size_t> &allowed_de
   }
 #endif
   {
-  vk::ImageMemoryBarrier barrier;
-  barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-  barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-  barrier.image = *image;
-  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-  barrier.subresourceRange.levelCount = 1;
-  barrier.subresourceRange.baseMipLevel = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead | vk::AccessFlagBits::eColorAttachmentWrite;
-  barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
-  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr, nullptr,barrier);
+    vk::ImageMemoryBarrier barrier;
+    barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+    barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+    barrier.image = *image;
+    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead |
+                            vk::AccessFlagBits::eColorAttachmentWrite;
+    barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+    copyBackBuffer->pipelineBarrier(
+        vk::PipelineStageFlagBits::eColorAttachmentOutput,
+        vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr,
+        nullptr, barrier);
   }
   {
-  vk::ImageMemoryBarrier barrier;
-  barrier.oldLayout = vk::ImageLayout::eUndefined;
-  barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
-  barrier.image = *outputImage;
-  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-  barrier.subresourceRange.levelCount = 1;
-  barrier.subresourceRange.baseMipLevel = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.srcAccessMask = {};
-  barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr, nullptr,barrier);
+    vk::ImageMemoryBarrier barrier;
+    barrier.oldLayout = vk::ImageLayout::eUndefined;
+    barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.image = *outputImage;
+    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.srcAccessMask = {};
+    barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+    copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                    vk::PipelineStageFlagBits::eTransfer,
+                                    vk::DependencyFlags{}, nullptr, nullptr,
+                                    barrier);
   }
   vk::ImageCopy copy;
-  copy.srcSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1};
-  copy.dstSubresource = { vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+  copy.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+  copy.dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
   copy.extent.depth = 1;
   copy.extent.width = width;
   copy.extent.height = height;
-  copyBackBuffer->copyImage(*image, vk::ImageLayout::eTransferSrcOptimal, *outputImage, vk::ImageLayout::eTransferDstOptimal, copy);
+  copyBackBuffer->copyImage(*image, vk::ImageLayout::eTransferSrcOptimal,
+                            *outputImage, vk::ImageLayout::eTransferDstOptimal,
+                            copy);
   {
-  vk::ImageMemoryBarrier barrier;
-  barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-  barrier.newLayout = vk::ImageLayout::eGeneral;
-  barrier.image = *outputImage;
-  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-  barrier.subresourceRange.levelCount = 1;
-  barrier.subresourceRange.baseMipLevel = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-  barrier.dstAccessMask = {};
-  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,vk::PipelineStageFlagBits::eBottomOfPipe, vk::DependencyFlags{}, nullptr, nullptr,barrier);
+    vk::ImageMemoryBarrier barrier;
+    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+    barrier.newLayout = vk::ImageLayout::eGeneral;
+    barrier.image = *outputImage;
+    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    barrier.subresourceRange.levelCount = 1;
+    barrier.subresourceRange.baseMipLevel = 0;
+    barrier.subresourceRange.layerCount = 1;
+    barrier.subresourceRange.baseArrayLayer = 0;
+    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+    barrier.dstAccessMask = {};
+    copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                    vk::PipelineStageFlagBits::eBottomOfPipe,
+                                    vk::DependencyFlags{}, nullptr, nullptr,
+                                    barrier);
   }
-
-
 
   copyBackBuffer->end();
 }
@@ -648,46 +647,47 @@ void HeadlessInterpolator::run() {
   auto start = std::chrono::high_resolution_clock::now();
   int frames = 0;
 
-    vk::PipelineStageFlags waitStageMask =
-        vk::PipelineStageFlagBits::eColorAttachmentOutput;
+  vk::PipelineStageFlags waitStageMask =
+      vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
-    while(true) {
+  while (true) {
     createPoints();
-  auto extent = vk::Extent2D{width, height};
-  for (size_t i = 0; i < commandBuffers.size(); i++) {
-    auto beginInfo = vk::CommandBufferBeginInfo{};
-    commandBuffers[i]->begin(beginInfo);
-    vk::ClearValue clearValues{};
-    auto renderPassBeginInfo =
-        vk::RenderPassBeginInfo{renderPass.get(), framebuffer.get(),
-                                vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
+    auto extent = vk::Extent2D{width, height};
+    for (size_t i = 0; i < commandBuffers.size(); i++) {
+      auto beginInfo = vk::CommandBufferBeginInfo{};
+      commandBuffers[i]->begin(beginInfo);
+      vk::ClearValue clearValues{};
+      auto renderPassBeginInfo =
+          vk::RenderPassBeginInfo{renderPass.get(), framebuffer.get(),
+                                  vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
 
-    vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-    commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
-    commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
-        
-    commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
-                                       vk::SubpassContents::eInline);
-    commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                    pipeline.get());
+      vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
+      commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first,
+                                           &offsets[0]);
+      commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0,
+                                         vk::IndexType::eUint32);
 
+      commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
+                                         vk::SubpassContents::eInline);
+      commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                      pipeline.get());
 
-    commandBuffers[i]->drawIndexed(nTris*3, 1, 0, 0, 0);
-    commandBuffers[i]->endRenderPass();
-    commandBuffers[i]->end();
-  }
-    vk::CommandBuffer buffers[]{ *copyBuffer, *commandBuffers[0], *copyBackBuffer};
-    
+      commandBuffers[i]->drawIndexed(nTris * 3, 1, 0, 0, 0);
+      commandBuffers[i]->endRenderPass();
+      commandBuffers[i]->end();
+    }
+    vk::CommandBuffer buffers[]{*copyBuffer, *commandBuffers[0],
+                                *copyBackBuffer};
+
     vk::SubmitInfo submitInfo;
     submitInfo.pSignalSemaphores = nullptr;
     submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.waitSemaphoreCount=0;
+    submitInfo.waitSemaphoreCount = 0;
     submitInfo.signalSemaphoreCount = 0;
     submitInfo.pWaitDstStageMask = &waitStageMask;
     submitInfo.commandBufferCount = 3;
     submitInfo.pCommandBuffers = buffers;
 
-   
 #ifdef FENCE
     device->resetFences(1, &*fence);
     deviceQueue.submit(submitInfo, *fence);
@@ -706,9 +706,8 @@ void HeadlessInterpolator::run() {
     deviceQueue.submit(submitInfo, {});
 #endif
 
-
 //  if ((frames +1) % 100 == 0) {
- // }
+// }
 #ifdef FENCE
     device->waitForFences(1, &*fence, true,
                           std::numeric_limits<uint64_t>::max());
@@ -716,34 +715,34 @@ void HeadlessInterpolator::run() {
     device->waitIdle();
 #endif
     ++frames;
-//    break;
+    //    break;
     auto stop = std::chrono::high_resolution_clock::now();
     if (frames % 1000 == 0) {
       std::cout << "FPS: " << (frames * 1e9 / (stop - start).count())
                 << std::endl;
     }
 
-    vk::SubresourceLayout layout = device->getImageSubresourceLayout(*outputImage, {vk::ImageAspectFlagBits::eColor });
-    const char*  data=
-      (const char*)device->mapMemory(*outputMem, layout.offset, layout.arrayPitch, vk::MemoryMapFlags{});
+    vk::SubresourceLayout layout = device->getImageSubresourceLayout(
+        *outputImage, {vk::ImageAspectFlagBits::eColor});
+    const char *data = (const char *)device->mapMemory(
+        *outputMem, layout.offset, layout.arrayPitch, vk::MemoryMapFlags{});
     (void)data;
 
 #if 0   
     static int id = 0;
-    std::ofstream res("foo" + std::to_string(id++ % 1000) + ".ppm", std::ios_base::binary);
+    std::ofstream res("foo" + std::to_string(id++ % 1000) + ".ppm",
+                      std::ios_base::binary);
     res << "P6\n" << width << '\n' << height << '\n' << 255 << '\n';
     for (uint32_t y = 0; y < height; ++y) {
-      uint32_t* row = (uint32_t*)data;
+      uint32_t *row = (uint32_t *)data;
       for (uint32_t x = 0; x < width; ++x)
-        res.write((char*)row++,3);
+        res.write((char *)row++, 3);
       data += layout.rowPitch;
     }
     res.close();
 #endif
     device->unmapMemory(*outputMem);
-
-
   }
 }
 
-}  // namespace vulkan_interpolator
+} // namespace vulkan_interpolator
