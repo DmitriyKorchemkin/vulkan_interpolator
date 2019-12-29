@@ -282,7 +282,7 @@ HeadlessInterpolator::HeadlessInterpolator(const std::vector<size_t> &allowed_de
                              glfwExtensionsVector.data()});
   auto physicalDevices = instance->enumeratePhysicalDevices();
 
-  physicalDevice = physicalDevices[0];
+  physicalDevice = physicalDevices[allowed_devices[0]];
   loadDebugUtilsCommands(*instance);
 
   messenger = instance->createDebugUtilsMessengerEXTUnique(
