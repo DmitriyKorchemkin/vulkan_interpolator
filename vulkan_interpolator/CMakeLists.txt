@@ -1,4 +1,7 @@
-add_library(vulkan_interpolator src/VulkanInterpolator.cpp)
+add_library(vulkan_interpolator 
+  src/VulkanInterpolator.cpp
+  src/VulkanInterpolatorHeadless.cpp
+  )
 
 target_include_directories(
   vulkan_interpolator

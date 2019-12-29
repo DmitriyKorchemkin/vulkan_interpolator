@@ -1,4 +1,4 @@
-#include <vulkan_interpolator/VulkanInterpolator.hpp>
+#include <vulkan_interpolator/VulkanInterpolatorHeadless.hpp>
 
 #include <iostream>
 
@@ -11,7 +11,7 @@ int main(int argc, char **argv) {
     return -1;
   }
 
-  vulkan_interpolator::Interpolator interpolator({});
+  vulkan_interpolator::HeadlessInterpolator interpolator({});
   interpolator.run();
 
   return 0;

@@ -4,29 +4,25 @@
 #include <vector>
 #include <random>
 #include <vulkan/vulkan.hpp>
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 
 namespace vulkan_interpolator {
 
-struct Interpolator {
+struct HeadlessInterpolator {
     static const uint32_t width = 1536;
     static const uint32_t height = 1536;
-    GLFWwindow* window;
     vk::UniqueInstance instance;
     vk::UniqueDebugUtilsMessengerEXT messenger;
-    vk::UniqueSurfaceKHR surface;
     vk::UniqueDevice device;
-    vk::UniqueSwapchainKHR swapChain;
-    std::vector<vk::UniqueImageView> imageViews;
+    vk::UniqueImage image;
+    vk::UniqueImageView imageView;
     vk::UniqueShaderModule vertexShaderModule, fragmentShaderModule;
     vk::UniquePipelineLayout pipelineLayout;
     vk::UniqueSemaphore imageAvailableSemaphore, renderFinishedSemaphore;
     vk::UniqueRenderPass renderPass;
     vk::UniquePipeline pipeline;
-    std::vector<vk::UniqueFramebuffer> framebuffers;
+    vk::UniqueFramebuffer framebuffer;
     vk::UniqueCommandPool commandPoolUnique;
-    vk::Queue presentQueue, deviceQueue;
+    vk::Queue deviceQueue;
     std::vector<vk::UniqueCommandBuffer> commandBuffers;
     vk::UniqueCommandBuffer copyBuffer, copyBackBuffer;
    vk::PhysicalDevice physicalDevice;
@@ -35,11 +31,11 @@ struct Interpolator {
   BufferMem vertexBuffer, indexBuffer, stagingBuffer;
   void* stagingData;
   vk::UniqueImage outputImage;
-  vk::UniqueDeviceMemory outputMem;
+  vk::UniqueDeviceMemory outputMem, renderMem;
     
 
-  Interpolator(const std::vector<size_t> &devices);
-  ~Interpolator();
+  HeadlessInterpolator(const std::vector<size_t> &devices);
+  ~HeadlessInterpolator();
   void run();
 
 private:
@@ -63,9 +59,6 @@ private:
   void stageData();
 
   uint32_t findMemoryType(uint32_t mask,  const vk::MemoryPropertyFlags &properties);
-
-  std::vector<const char *> required_extensions = {
-      VK_KHR_SWAPCHAIN_EXTENSION_NAME};
 };
 
 } // namespace vulkan_interpolator
