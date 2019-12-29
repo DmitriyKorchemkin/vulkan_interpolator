@@ -142,7 +142,7 @@ void HeadlessInterpolator::createPoints() {
   }
   stageData();
   auto dstop = std::chrono::high_resolution_clock::now();
-  std::cout << "D: " << (1e9 / (dstop - dstart).count()) << std::endl;
+  std::cout << "D: " << (1e9 / (dstop - dstart).count()) << "FPS" << std::endl;
 }
 uint32_t HeadlessInterpolator::findMemoryType(
     uint32_t mask, const vk::MemoryPropertyFlags &properties) {
@@ -179,8 +179,6 @@ void HeadlessInterpolator::createStagingBuffer() {
   stagingBuffer = createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
                                vk::MemoryPropertyFlagBits::eHostVisible |
                                    vk::MemoryPropertyFlagBits::eHostCoherent);
-  //  device->mapMemory(*stagingBuffer.second, 0, size, vk::MemoryMapFlags{},
-  //                    &stagingData);
 
   vk::CommandBufferAllocateInfo allocInfo;
   allocInfo.level = vk::CommandBufferLevel::ePrimary;
@@ -545,57 +543,34 @@ HeadlessInterpolator::HeadlessInterpolator(
   vk::CommandBufferBeginInfo cbegin{};
   copyBackBuffer->begin(cbegin);
 
-#if 0
-  {
   vk::ImageMemoryBarrier barrier;
-  barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-  barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-  barrier.image = *image;
   barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
   barrier.subresourceRange.levelCount = 1;
   barrier.subresourceRange.baseMipLevel = 0;
   barrier.subresourceRange.layerCount = 1;
   barrier.subresourceRange.baseArrayLayer = 0;
-  barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentWrite;
+
+  // Color -> Src
+  barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+  barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+  barrier.image = *image;
+  barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead |
+                          vk::AccessFlagBits::eColorAttachmentWrite;
   barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
-  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eColorAttachmentOutput,vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr, nullptr,barrier);
-  }
-#endif
-  {
-    vk::ImageMemoryBarrier barrier;
-    barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-    barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-    barrier.image = *image;
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead |
-                            vk::AccessFlagBits::eColorAttachmentWrite;
-    barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
-    copyBackBuffer->pipelineBarrier(
-        vk::PipelineStageFlagBits::eColorAttachmentOutput,
-        vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr,
-        nullptr, barrier);
-  }
-  {
-    vk::ImageMemoryBarrier barrier;
-    barrier.oldLayout = vk::ImageLayout::eUndefined;
-    barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
-    barrier.image = *outputImage;
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.srcAccessMask = {};
-    barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-    copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                    vk::PipelineStageFlagBits::eTransfer,
-                                    vk::DependencyFlags{}, nullptr, nullptr,
-                                    barrier);
-  }
+  copyBackBuffer->pipelineBarrier(
+      vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr,
+      nullptr, barrier);
+  // Output -> Dst
+  barrier.oldLayout = vk::ImageLayout::eUndefined;
+  barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
+  barrier.image = *outputImage;
+  barrier.srcAccessMask = {};
+  barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                  vk::PipelineStageFlagBits::eTransfer,
+                                  vk::DependencyFlags{}, nullptr, nullptr,
+                                  barrier);
   vk::ImageCopy copy;
   copy.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
   copy.dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
@@ -605,23 +580,17 @@ HeadlessInterpolator::HeadlessInterpolator(
   copyBackBuffer->copyImage(*image, vk::ImageLayout::eTransferSrcOptimal,
                             *outputImage, vk::ImageLayout::eTransferDstOptimal,
                             copy);
-  {
-    vk::ImageMemoryBarrier barrier;
-    barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-    barrier.newLayout = vk::ImageLayout::eGeneral;
-    barrier.image = *outputImage;
-    barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    barrier.subresourceRange.levelCount = 1;
-    barrier.subresourceRange.baseMipLevel = 0;
-    barrier.subresourceRange.layerCount = 1;
-    barrier.subresourceRange.baseArrayLayer = 0;
-    barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-    barrier.dstAccessMask = {};
-    copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                    vk::PipelineStageFlagBits::eBottomOfPipe,
-                                    vk::DependencyFlags{}, nullptr, nullptr,
-                                    barrier);
-  }
+
+  // Output -> General
+  barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+  barrier.newLayout = vk::ImageLayout::eGeneral;
+  barrier.image = *outputImage;
+  barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+  barrier.dstAccessMask = {};
+  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                  vk::PipelineStageFlagBits::eBottomOfPipe,
+                                  vk::DependencyFlags{}, nullptr, nullptr,
+                                  barrier);
 
   copyBackBuffer->end();
 }
@@ -674,34 +643,12 @@ void HeadlessInterpolator::run() {
     submitInfo.commandBufferCount = 3;
     submitInfo.pCommandBuffers = buffers;
 
-#ifdef FENCE
     device->resetFences(1, &*fence);
     deviceQueue.submit(submitInfo, *fence);
-#if 0
-    device->waitForFences(1, &*fence, true, std::numeric_limits<uint64_t>::max());
-
-    device->resetFences(1, &*fence);
-    {
-      vk::SubmitInfo copyBack;
-      copyBack.commandBufferCount = 1;
-      copyBack.pCommandBuffers = buffers + 2;
-      deviceQueue.submit(copyBack, *fence);
-    }
-#endif
-#else
-    deviceQueue.submit(submitInfo, {});
-#endif
-
-//  if ((frames +1) % 100 == 0) {
-// }
-#ifdef FENCE
     device->waitForFences(1, &*fence, true,
                           std::numeric_limits<uint64_t>::max());
-#else
-    device->waitIdle();
-#endif
-    ++frames;
-    //    break;
+
+    frames++;
     auto stop = std::chrono::high_resolution_clock::now();
     if (frames % 1000 == 0) {
       std::cout << "FPS: " << (frames * 1e9 / (stop - start).count())
