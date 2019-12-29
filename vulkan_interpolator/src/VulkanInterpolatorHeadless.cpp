@@ -139,20 +139,6 @@ void HeadlessInterpolator::createPoints() {
     for (int j = 0; j < 3; ++j) {
       indicies[i * 3 + j] = d.triangles[i * 3 + j];
     }
-    double x0 = points[indicies[3 * i] * 6];
-    double y0 = points[indicies[3 * i] * 6 + 1];
-    double x1 = points[indicies[3 * i + 1] * 6];
-    double y1 = points[indicies[3 * i + 1] * 6 + 1];
-    double x2 = points[indicies[3 * i + 2] * 6];
-    double y2 = points[indicies[3 * i + 2] * 6 + 1];
-    double dx1 = x1 - x0;
-    double dy1 = y1 - y0;
-    double dx2 = x2 - x0;
-    double dy2 = y2 - y0;
-    double det = dx1 * dy2 - dx2 * dy1;
-    if (det > 0)
-      std::swap(indicies[3 * i], indicies[3 * i + 1]);
-    //    std::cout << indicies[i] << ' ';
   }
   stageData();
   auto dstop = std::chrono::high_resolution_clock::now();
