@@ -11,8 +11,7 @@
 
 #include <delaunator.hpp>
 
-#define FENCE
-
+#ifdef DEBUG
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
               VkDebugUtilsMessageTypeFlagsEXT messageType,
@@ -93,9 +92,8 @@ VKAPI_ATTR void VKAPI_CALL vkSubmitDebugUtilsMessageEXT(
   auto dispatched_cmd = SubmitDebugUtilsMessageEXTDispatchTable.at(instance);
   return dispatched_cmd(instance, messageSeverity, messageTypes, pCallbackData);
 }
-
-namespace vulkan_interpolator {
-
+#endif
+namespace {
 auto kernel2string(const std::string_view &view) {
   std::ostringstream kernel;
   for (auto &c : view)
@@ -103,21 +101,19 @@ auto kernel2string(const std::string_view &view) {
   return kernel.str();
 }
 
-auto register_shader(const std::string_view &code, vk::Device &device) {
-  vk::ShaderModuleCreateInfo info;
-  info.codeSize = code.size();
-  info.pCode = reinterpret_cast<const uint32_t *>(code.data());
-  return device.createShaderModuleUnique(info);
 }
+
+namespace vulkan_interpolator {
+
 void HeadlessInterpolator::createPoints() {
   std::uniform_real_distribution<float> u01(0, 1), u11(-1, 1);
-  points.resize(N_PTS * 6);
+  points.resize(N_PTS * 5);
   int idx = 0;
   std::vector<double> coords;
   for (auto &p : points) {
 
-    p = (idx % 6) < 3 ? ((idx % 6) < 2 ? u11(rng) : 1.f) : u01(rng);
-    if (idx % 6 == 1) {
+    p = (idx % 5) < 2 ? ((idx % 5) < 2 ? u11(rng) : 1.f) : u01(rng);
+    if (idx % 5 == 1) {
       coords.push_back(points[idx - 1]);
       coords.push_back(points[idx]);
     }
@@ -206,7 +202,7 @@ void HeadlessInterpolator::stageData() {
   int IDX_SIZE = nTris * 3 * sizeof(int);
   device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE + IDX_MAX_SIZE,
                     vk::MemoryMapFlags{}, &stagingData);
-  { memcpy(stagingData, points.data(), N_PTS * 6 * sizeof(float)); }
+  { memcpy(stagingData, points.data(), N_PTS * 5 * sizeof(float)); }
   { memcpy((uint8_t *)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE); }
   device->unmapMemory(*stagingBuffer.second);
 }
@@ -244,9 +240,9 @@ HeadlessInterpolator::HeadlessInterpolator(
                               VK_API_VERSION_1_0);
 
   std::vector<const char *> glfwExtensionsVector;
-  glfwExtensionsVector.push_back("VK_EXT_debug_utils");
+//glfwExtensionsVector.push_back("VK_EXT_debug_utils");
   auto layers =
-      std::vector<const char *>{"VK_LAYER_LUNARG_standard_validation"};
+      std::vector<const char *>{};//{"VK_LAYER_LUNARG_standard_validation"};
 
   instance = vk::createInstanceUnique(
       vk::InstanceCreateInfo{{},
@@ -256,8 +252,10 @@ HeadlessInterpolator::HeadlessInterpolator(
                              static_cast<uint32_t>(glfwExtensionsVector.size()),
                              glfwExtensionsVector.data()});
   auto physicalDevices = instance->enumeratePhysicalDevices();
+  std::cout << "#Devices = " << physicalDevices.size() << std::endl;
 
   physicalDevice = physicalDevices[allowed_devices[0]];
+#ifdef DEBUG
   loadDebugUtilsCommands(*instance);
 
   messenger = instance->createDebugUtilsMessengerEXTUnique(
@@ -272,7 +270,7 @@ HeadlessInterpolator::HeadlessInterpolator(
               vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance,
           debugCallback},
       nullptr);
-
+#endif
   auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
   size_t graphicsQueueFamilyIndex = std::distance(
@@ -322,12 +320,12 @@ HeadlessInterpolator::HeadlessInterpolator(
 
   vk::VertexInputBindingDescription vertexBinding;
   vertexBinding.binding = 0;
-  vertexBinding.stride = sizeof(float) * 6;
+  vertexBinding.stride = sizeof(float) * 5;
   vertexBinding.inputRate = vk::VertexInputRate::eVertex;
 
   vk::VertexInputAttributeDescription vertexAttributes[] = {
-      {0, 0, vk::Format::eR32G32B32Sfloat, 0},
-      {1, 0, vk::Format::eR32G32B32Sfloat, 3 * sizeof(float)}};
+      {0, 0, vk::Format::eR32G32Sfloat, 0},
+      {1, 0, vk::Format::eR32G32B32Sfloat, 2 * sizeof(float)}};
 
   vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
   vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;

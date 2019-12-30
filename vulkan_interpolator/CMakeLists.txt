@@ -10,7 +10,7 @@ target_include_directories(
 
 target_link_libraries(vulkan_interpolator Vulkan::Vulkan glfw delaunator)
 
-set(CMAKE_GLSLC /home/dka/vulkan/1.1.126.0/x86_64/bin/glslc)
+set(CMAKE_GLSLC /home/dkorchemkin/vulkan/1.1.126.0/x86_64/bin/glslc)
 
 function(add_shader_library)
   cmake_parse_arguments(AS_ARGS "" "NAMESPACE;LIBRARY;HEADER_NAME" "SHADERS"
