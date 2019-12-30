@@ -101,19 +101,19 @@ auto kernel2string(const std::string_view &view) {
   return kernel.str();
 }
 
-}
+} // namespace
 
 namespace vulkan_interpolator {
 
 void HeadlessInterpolator::createPoints() {
   std::uniform_real_distribution<float> u01(0, 1), u11(-1, 1);
-  points.resize(N_PTS * 5);
+  points.resize(N_PTS * 3);
   int idx = 0;
   std::vector<double> coords;
   for (auto &p : points) {
 
-    p = (idx % 5) < 2 ? ((idx % 5) < 2 ? u11(rng) : 1.f) : u01(rng);
-    if (idx % 5 == 1) {
+    p = (idx % 3) < 2 ? u11(rng) : u01(rng);
+    if (idx % 3 == 1) {
       coords.push_back(points[idx - 1]);
       coords.push_back(points[idx]);
     }
@@ -202,7 +202,7 @@ void HeadlessInterpolator::stageData() {
   int IDX_SIZE = nTris * 3 * sizeof(int);
   device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE + IDX_MAX_SIZE,
                     vk::MemoryMapFlags{}, &stagingData);
-  { memcpy(stagingData, points.data(), N_PTS * 5 * sizeof(float)); }
+  { memcpy(stagingData, points.data(), N_PTS * 3 * sizeof(float)); }
   { memcpy((uint8_t *)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE); }
   device->unmapMemory(*stagingBuffer.second);
 }
@@ -240,9 +240,14 @@ HeadlessInterpolator::HeadlessInterpolator(
                               VK_API_VERSION_1_0);
 
   std::vector<const char *> glfwExtensionsVector;
-//glfwExtensionsVector.push_back("VK_EXT_debug_utils");
-  auto layers =
-      std::vector<const char *>{};//{"VK_LAYER_LUNARG_standard_validation"};
+#ifdef DEBUG
+  glfwExtensionsVector.push_back("VK_EXT_debug_utils");
+#endif
+  auto layers = std::vector<const char *>{
+#ifdef DEBUG
+      "VK_LAYER_LUNARG_standard_validation"
+#endif
+  };
 
   instance = vk::createInstanceUnique(
       vk::InstanceCreateInfo{{},
@@ -295,7 +300,7 @@ HeadlessInterpolator::HeadlessInterpolator(
       vk::DeviceCreateInfo(vk::DeviceCreateFlags(), queueCreateInfos.size(),
                            queueCreateInfos.data(), 0, nullptr, 0, nullptr));
 
-  auto format = vk::Format::eR8G8B8A8Unorm;
+  auto format = vk::Format::eR32Sfloat;
   auto extent = vk::Extent2D{width, height};
 
   auto vertShaderCreateInfo = vk::ShaderModuleCreateInfo{
@@ -320,12 +325,12 @@ HeadlessInterpolator::HeadlessInterpolator(
 
   vk::VertexInputBindingDescription vertexBinding;
   vertexBinding.binding = 0;
-  vertexBinding.stride = sizeof(float) * 5;
+  vertexBinding.stride = sizeof(float) * 3;
   vertexBinding.inputRate = vk::VertexInputRate::eVertex;
 
   vk::VertexInputAttributeDescription vertexAttributes[] = {
       {0, 0, vk::Format::eR32G32Sfloat, 0},
-      {1, 0, vk::Format::eR32G32B32Sfloat, 2 * sizeof(float)}};
+      {1, 0, vk::Format::eR32Sfloat, 2 * sizeof(float)}};
 
   vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
   vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
@@ -441,7 +446,7 @@ HeadlessInterpolator::HeadlessInterpolator(
   {
     vk::ImageCreateInfo imageInfo;
     imageInfo.imageType = vk::ImageType::e2D;
-    imageInfo.format = vk::Format::eR8G8B8A8Unorm;
+    imageInfo.format = vk::Format::eR32Sfloat;
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
@@ -461,7 +466,7 @@ HeadlessInterpolator::HeadlessInterpolator(
 
     vk::ImageViewCreateInfo viewInfo;
     viewInfo.viewType = vk::ImageViewType::e2D;
-    viewInfo.format = vk::Format::eR8G8B8A8Unorm;
+    viewInfo.format = vk::Format::eR32Sfloat;
     viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
@@ -490,6 +495,8 @@ HeadlessInterpolator::HeadlessInterpolator(
   auto beginInfo = vk::CommandBufferBeginInfo{};
   commandBuffers[0]->begin(beginInfo);
   vk::ClearValue clearValues{};
+  for (int i = 0; i < 4; ++i)
+    clearValues.color.float32[i] = std::nan("");
   auto renderPassBeginInfo =
       vk::RenderPassBeginInfo{renderPass.get(), *framebuffer,
                               vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
@@ -510,7 +517,7 @@ HeadlessInterpolator::HeadlessInterpolator(
 
   vk::ImageCreateInfo imgInfo;
   imgInfo.imageType = vk::ImageType::e2D;
-  imgInfo.format = vk::Format::eR8G8B8A8Unorm;
+  imgInfo.format = vk::Format::eR32Sfloat;
   imgInfo.extent.width = width;
   imgInfo.extent.height = height;
   imgInfo.extent.depth = 1;
@@ -610,6 +617,8 @@ void HeadlessInterpolator::run() {
       auto beginInfo = vk::CommandBufferBeginInfo{};
       commandBuffers[i]->begin(beginInfo);
       vk::ClearValue clearValues{};
+      for (int i = 0; i < 4; ++i)
+        clearValues.color.float32[i] = std::nan("");
       auto renderPassBeginInfo =
           vk::RenderPassBeginInfo{renderPass.get(), framebuffer.get(),
                                   vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
@@ -663,11 +672,9 @@ void HeadlessInterpolator::run() {
     static int id = 0;
     std::ofstream res("foo" + std::to_string(id++ % 1000) + ".ppm",
                       std::ios_base::binary);
-    res << "P6\n" << width << '\n' << height << '\n' << 255 << '\n';
     for (uint32_t y = 0; y < height; ++y) {
       uint32_t *row = (uint32_t *)data;
-      for (uint32_t x = 0; x < width; ++x)
-        res.write((char *)row++, 3);
+      res.write((char *)row, sizeof(float) * width);
       data += layout.rowPitch;
     }
     res.close();
