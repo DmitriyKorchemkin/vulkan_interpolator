@@ -407,10 +407,6 @@ HeadlessInterpolator::HeadlessInterpolator(
                                         1,
                                         &colourAttachmentRef};
 
-  auto semaphoreCreateInfo = vk::SemaphoreCreateInfo{};
-  imageAvailableSemaphore = device->createSemaphoreUnique(semaphoreCreateInfo);
-  renderFinishedSemaphore = device->createSemaphoreUnique(semaphoreCreateInfo);
-
   std::array<vk::SubpassDependency, 1> subpassDependency = {
       vk::SubpassDependency{VK_SUBPASS_EXTERNAL, 0,
                             vk::PipelineStageFlagBits::eBottomOfPipe,
@@ -486,34 +482,30 @@ HeadlessInterpolator::HeadlessInterpolator(
   createIndexBuffer();
   createStagingBuffer();
 
-  commandBuffers =
-      device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-          commandPoolUnique.get(), vk::CommandBufferLevel::ePrimary, 1));
+  auto bar = device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
+      *commandPoolUnique, vk::CommandBufferLevel::ePrimary, 1));
+  renderBuffer = std::move(bar[0]);
 
   deviceQueue = device->getQueue(graphicsQueueFamilyIndex, 0);
 
   auto beginInfo = vk::CommandBufferBeginInfo{};
-  commandBuffers[0]->begin(beginInfo);
-  vk::ClearValue clearValues{};
+  renderBuffer->begin(beginInfo);
   for (int i = 0; i < 4; ++i)
     clearValues.color.float32[i] = std::nan("");
-  auto renderPassBeginInfo =
-      vk::RenderPassBeginInfo{renderPass.get(), *framebuffer,
-                              vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
+  auto renderPassBeginInfo = vk::RenderPassBeginInfo{
+      *renderPass, *framebuffer, vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
 
   vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-  commandBuffers[0]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
-  commandBuffers[0]->bindIndexBuffer(*indexBuffer.first, 0,
-                                     vk::IndexType::eUint32);
+  renderBuffer->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
+  renderBuffer->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
 
-  commandBuffers[0]->beginRenderPass(renderPassBeginInfo,
-                                     vk::SubpassContents::eInline);
-  commandBuffers[0]->bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                  pipeline.get());
+  renderBuffer->beginRenderPass(renderPassBeginInfo,
+                                vk::SubpassContents::eInline);
+  renderBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
-  commandBuffers[0]->drawIndexed(nTris, 1, 0, 0, 0);
-  commandBuffers[0]->endRenderPass();
-  commandBuffers[0]->end();
+  renderBuffer->drawIndexed(nTris, 1, 0, 0, 0);
+  renderBuffer->endRenderPass();
+  renderBuffer->end();
 
   vk::ImageCreateInfo imgInfo;
   imgInfo.imageType = vk::ImageType::e2D;
@@ -598,60 +590,48 @@ HeadlessInterpolator::HeadlessInterpolator(
                                   barrier);
 
   copyBackBuffer->end();
+  vk::FenceCreateInfo info;
+  fence = device->createFenceUnique(info);
 }
 
 void HeadlessInterpolator::run() {
-  vk::UniqueFence fence;
-  vk::FenceCreateInfo info;
-  fence = device->createFenceUnique(info);
   auto start = std::chrono::high_resolution_clock::now();
   int frames = 0;
 
-  vk::PipelineStageFlags waitStageMask =
-      vk::PipelineStageFlagBits::eColorAttachmentOutput;
+  vk::CommandBuffer buffers[]{*copyBuffer, *renderBuffer, *copyBackBuffer};
+
+  vk::SubmitInfo submitInfo;
+  submitInfo.pSignalSemaphores = nullptr;
+  submitInfo.pWaitSemaphores = nullptr;
+  submitInfo.waitSemaphoreCount = 0;
+  submitInfo.signalSemaphoreCount = 0;
+  submitInfo.pWaitDstStageMask = nullptr;
+  submitInfo.commandBufferCount = 3;
+  submitInfo.pCommandBuffers = buffers;
 
   while (true) {
     createPoints();
     auto extent = vk::Extent2D{width, height};
-    for (size_t i = 0; i < commandBuffers.size(); i++) {
-      auto beginInfo = vk::CommandBufferBeginInfo{};
-      commandBuffers[i]->begin(beginInfo);
-      vk::ClearValue clearValues{};
-      for (int i = 0; i < 4; ++i)
-        clearValues.color.float32[i] = std::nan("");
-      auto renderPassBeginInfo =
-          vk::RenderPassBeginInfo{renderPass.get(), framebuffer.get(),
-                                  vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
+    auto beginInfo = vk::CommandBufferBeginInfo{};
+    renderBuffer->begin(beginInfo);
+    auto renderPassBeginInfo = vk::RenderPassBeginInfo{
+        *renderPass, *framebuffer, vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
 
-      vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-      commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first,
-                                           &offsets[0]);
-      commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0,
-                                         vk::IndexType::eUint32);
+    vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
+    renderBuffer->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
+    renderBuffer->bindIndexBuffer(*indexBuffer.first, 0,
+                                  vk::IndexType::eUint32);
 
-      commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
-                                         vk::SubpassContents::eInline);
-      commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                      pipeline.get());
+    renderBuffer->beginRenderPass(renderPassBeginInfo,
+                                  vk::SubpassContents::eInline);
+    renderBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
 
-      commandBuffers[i]->drawIndexed(nTris * 3, 1, 0, 0, 0);
-      commandBuffers[i]->endRenderPass();
-      commandBuffers[i]->end();
-    }
-    vk::CommandBuffer buffers[]{*copyBuffer, *commandBuffers[0],
-                                *copyBackBuffer};
-
-    vk::SubmitInfo submitInfo;
-    submitInfo.pSignalSemaphores = nullptr;
-    submitInfo.pWaitSemaphores = nullptr;
-    submitInfo.waitSemaphoreCount = 0;
-    submitInfo.signalSemaphoreCount = 0;
-    submitInfo.pWaitDstStageMask = &waitStageMask;
-    submitInfo.commandBufferCount = 3;
-    submitInfo.pCommandBuffers = buffers;
+    renderBuffer->drawIndexed(nTris * 3, 1, 0, 0, 0);
+    renderBuffer->endRenderPass();
+    renderBuffer->end();
 
     device->resetFences(1, &*fence);
-    deviceQueue.submit(submitInfo, *fence);
+    deviceQueue.submit(submitInfo, fence.get());
     device->waitForFences(1, &*fence, true,
                           std::numeric_limits<uint64_t>::max());
 
