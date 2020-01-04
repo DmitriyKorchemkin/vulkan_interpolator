@@ -300,7 +300,6 @@ HeadlessInterpolator::HeadlessInterpolator(
       vk::DeviceCreateInfo(vk::DeviceCreateFlags(), queueCreateInfos.size(),
                            queueCreateInfos.data(), 0, nullptr, 0, nullptr));
 
-  auto format = vk::Format::eR32Sfloat;
   auto extent = vk::Extent2D{width, height};
 
   auto vertShaderCreateInfo = vk::ShaderModuleCreateInfo{
@@ -329,8 +328,8 @@ HeadlessInterpolator::HeadlessInterpolator(
   vertexBinding.inputRate = vk::VertexInputRate::eVertex;
 
   vk::VertexInputAttributeDescription vertexAttributes[] = {
-      {0, 0, vk::Format::eR32G32Sfloat, 0},
-      {1, 0, vk::Format::eR32Sfloat, 2 * sizeof(float)}};
+      {0, 0, format2d, 0},
+      {1, 0, format1d, 2 * sizeof(float)}};
 
   vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
   vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
@@ -388,7 +387,7 @@ HeadlessInterpolator::HeadlessInterpolator(
 
   auto colorAttachment =
       vk::AttachmentDescription{{},
-                                format,
+                                format1d,
                                 vk::SampleCountFlagBits::e1,
                                 vk::AttachmentLoadOp::eClear,
                                 vk::AttachmentStoreOp::eStore,
@@ -442,7 +441,7 @@ HeadlessInterpolator::HeadlessInterpolator(
   {
     vk::ImageCreateInfo imageInfo;
     imageInfo.imageType = vk::ImageType::e2D;
-    imageInfo.format = vk::Format::eR32Sfloat;
+    imageInfo.format = format1d;
     imageInfo.extent.width = width;
     imageInfo.extent.height = height;
     imageInfo.extent.depth = 1;
@@ -462,7 +461,7 @@ HeadlessInterpolator::HeadlessInterpolator(
 
     vk::ImageViewCreateInfo viewInfo;
     viewInfo.viewType = vk::ImageViewType::e2D;
-    viewInfo.format = vk::Format::eR32Sfloat;
+    viewInfo.format = format1d;
     viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
     viewInfo.subresourceRange.baseMipLevel = 0;
     viewInfo.subresourceRange.levelCount = 1;
@@ -488,28 +487,12 @@ HeadlessInterpolator::HeadlessInterpolator(
 
   deviceQueue = device->getQueue(graphicsQueueFamilyIndex, 0);
 
-  auto beginInfo = vk::CommandBufferBeginInfo{};
-  renderBuffer->begin(beginInfo);
   for (int i = 0; i < 4; ++i)
     clearValues.color.float32[i] = std::nan("");
-  auto renderPassBeginInfo = vk::RenderPassBeginInfo{
-      *renderPass, *framebuffer, vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
-
-  vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-  renderBuffer->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
-  renderBuffer->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
-
-  renderBuffer->beginRenderPass(renderPassBeginInfo,
-                                vk::SubpassContents::eInline);
-  renderBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-
-  renderBuffer->drawIndexed(nTris, 1, 0, 0, 0);
-  renderBuffer->endRenderPass();
-  renderBuffer->end();
 
   vk::ImageCreateInfo imgInfo;
   imgInfo.imageType = vk::ImageType::e2D;
-  imgInfo.format = vk::Format::eR32Sfloat;
+  imgInfo.format = format1d;
   imgInfo.extent.width = width;
   imgInfo.extent.height = height;
   imgInfo.extent.depth = 1;
