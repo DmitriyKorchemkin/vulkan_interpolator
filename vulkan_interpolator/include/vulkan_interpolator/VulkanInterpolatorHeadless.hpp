@@ -1,9 +1,9 @@
 #ifndef VULKAN_INTERPOLATOR
 #define VULKAN_INTERPOLATOR
 
+#include <mutex>
 #include <random>
 #include <vector>
-#include <mutex>
 #include <vulkan/vulkan.hpp>
 
 namespace vulkan_interpolator {
@@ -16,70 +16,56 @@ struct InterpolationOptions {
 };
 
 struct HeadlessInterpolator {
-  HeadlessInterpolator(const std::vector<size_t> &devices);
+  HeadlessInterpolator(const std::vector<size_t>& devices, const InterpolationOptions &opts = InterpolationOptions());
   ~HeadlessInterpolator();
   void run();
 
-
   // Triangulate and rasterize
-  void interpolate(
-      const int nPoints,
-      const float* points,
-      const float* values,
-      const int width,
-      const int height,
-      const int stride_bytes,
-      float* output);
+  void interpolate(const int nPoints, const float* points, const float* values,
+                   const int width, const int height, const int stride_bytes,
+                   float* output);
   // Just rasterize
-  void interpolate(
-      const int nPoints,
-      const float* points,
-      const float* values,
-      const int nTriangles,
-      const int* indicies,
-      const int width,
-      const int height,
-      const int stride_bytes,
-      float* output);
-
+  void interpolate(const int nPoints, const float* points, const float* values,
+                   const int nTriangles, const int* indicies, const int width,
+                   const int height, const int stride_bytes, float* output);
 
   // Compute delaunay triangulation
-  static void PrepareInterpolation(
-      const int nPoints,
-      const float* points,
-      std::vector<int> &indicies);
-private:
+  static void PrepareInterpolation(const int nPoints, const float* points,
+                                   std::vector<int>& indicies);
+
+ private:
   std::mutex mutex;
+  // allocate new vertex data buffer if needed
   bool allocatePoints();
+  // allocate new index data buffer if needed
   bool allocateIndicies();
+  // allocate output image if needed, setup scissors, scaler
   bool allocateImage();
+  // stage vertex data, setup copying
   void setupVertices();
+  // setup copying output image
   void setupCopyImage();
+  // setup renderpass
+  void setupRenderpass();
+  // Perform rasterizer run & map image memory 
+  void rasterize();
+
+  uint32_t heightAllocated = 0, widthAllocated = 0, pointsAllocated = 0,
+      indiciesAllocated = 0;
+   size_t stagingAllocated = 0;
+
+  uint32_t height, width, points, indicies;
+  // points into staging buffer
+  float* points_ptr;
+  // points into staging buffer
+  int32_t* indicies_ptr;
   
 
-
-  int heightAllocated = 0, widthAllocated = 0,  pointsAllocated = 0, indiciesAllocated = 0;
-
-  int height, width, points, indicies;
-
-
-
-
-
-  const int N_PTS = 10000;
-  const int PTS_SIZE = 6 * N_PTS * sizeof(float);
-  int nTris = 0;
-  const size_t IDX_MAX_CNT = 30 * N_PTS;
-  const size_t IDX_MAX_SIZE = IDX_MAX_CNT * sizeof(uint32_t);
   const vk::Format format1d = vk::Format::eR32Sfloat,
-        format2d = vk::Format::eR32G32Sfloat;
-  static const uint32_t width = 4096;
-  static const uint32_t height = 4096;
+                   format2d = vk::Format::eR32G32Sfloat;
   vk::UniqueInstance instance;
   vk::UniqueDebugUtilsMessengerEXT messenger;
   vk::UniqueDevice device;
-  vk::UniqueImage image;
-  vk::UniqueImageView imageView;
   vk::UniqueShaderModule vertexShaderModule, fragmentShaderModule;
   vk::UniquePipelineLayout pipelineLayout;
   vk::UniqueRenderPass renderPass;
@@ -89,32 +75,23 @@ private:
   vk::Queue deviceQueue;
   vk::UniqueCommandBuffer copyBuffer, copyBackBuffer, renderBuffer;
   vk::PhysicalDevice physicalDevice;
-  using BufferMem = std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory>;
+  using BufferMem = std::pair< vk::UniqueDeviceMemory, vk::UniqueBuffer>;
   BufferMem vertexBuffer, indexBuffer, stagingBuffer;
-  void *stagingData;
-  vk::UniqueImage outputImage;
   vk::UniqueDeviceMemory outputMem, renderMem;
+  vk::UniqueImage image;
+  vk::UniqueImageView imageView;
+  vk::UniqueImage outputImage;
+  void* stagingData;
   vk::UniqueFence fence;
   vk::ClearValue clearValues;
 
-
-  std::vector<float> points;
-  std::vector<int> indicies;
-  std::mt19937 rng;
-
-  void createPoints();
-
-  BufferMem createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
-                         const vk::MemoryPropertyFlags &flags);
-  void createVertexBuffer();
-  void createIndexBuffer();
-  void createStagingBuffer();
-  void stageData();
+  BufferMem createBuffer(size_t sz, const vk::BufferUsageFlags& usage,
+                         const vk::MemoryPropertyFlags& flags);
 
   uint32_t findMemoryType(uint32_t mask,
-                          const vk::MemoryPropertyFlags &properties);
+                          const vk::MemoryPropertyFlags& properties);
 };
 
-} // namespace vulkan_interpolator
+}  // namespace vulkan_interpolator
 
 #endif

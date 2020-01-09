@@ -11,6 +11,8 @@
 
 #include <delaunator.hpp>
 
+#define DEBUG
+
 #ifdef DEBUG
 static VKAPI_ATTR VkBool32 VKAPI_CALL
 debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
@@ -26,7 +28,7 @@ debugCallback(VkDebugUtilsMessageSeverityFlagBitsEXT messageSeverity,
             << "]: " << pCallbackData->pMessage << std::endl;
   if ((vk::DebugUtilsMessageSeverityFlagBitsEXT)messageSeverity ==
       vk::DebugUtilsMessageSeverityFlagBitsEXT::eError)
-    exit(-1);
+    throw std::runtime_error("Vulkan error");
   return VK_FALSE;
 }
 
@@ -42,25 +44,25 @@ void loadDebugUtilsCommands(VkInstance instance) {
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkCreateDebugUtilsMessengerEXT"; // check shouldn't
-                                                           // be necessary
-                                                           // (based on spec)
+    throw "Failed to load vkCreateDebugUtilsMessengerEXT";  // check shouldn't
+                                                            // be necessary
+                                                            // (based on spec)
   CreateDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkDestroyDebugUtilsMessengerEXT"; // check shouldn't
-                                                            // be necessary
-                                                            // (based on spec)
+    throw "Failed to load vkDestroyDebugUtilsMessengerEXT";  // check shouldn't
+                                                             // be necessary
+                                                             // (based on spec)
   DestroyDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT");
   if (!temp_fp)
-    throw "Failed to load vkSubmitDebugUtilsMessageEXT"; // check shouldn't be
-                                                         // necessary (based on
-                                                         // spec)
+    throw "Failed to load vkSubmitDebugUtilsMessageEXT";  // check shouldn't be
+                                                          // necessary (based on
+                                                          // spec)
   SubmitDebugUtilsMessageEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkSubmitDebugUtilsMessageEXT>(temp_fp);
 }
@@ -101,45 +103,287 @@ auto kernel2string(const std::string_view &view) {
   return kernel.str();
 }
 
-} // namespace
+}  // namespace
 
 namespace vulkan_interpolator {
 
-void HeadlessInterpolator::createPoints() {
-  std::uniform_real_distribution<float> u01(0, 1), u11(-1, 1);
-  points.resize(N_PTS * 3);
-  int idx = 0;
-  std::vector<double> coords;
-  for (auto &p : points) {
-
-    p = (idx % 3) < 2 ? u11(rng) : u01(rng);
-    if (idx % 3 == 1) {
-      coords.push_back(points[idx - 1]);
-      coords.push_back(points[idx]);
-    }
-    ++idx;
-  }
-
-  auto dstart = std::chrono::high_resolution_clock::now();
-  std::cout << "Delaunator: " << std::endl;
-  delaunator::Delaunator d(coords);
-  if (d.triangles.size() > IDX_MAX_CNT) {
-    std::cout << "FUCKED UP!" << std::endl;
-    exit(-1);
-  }
-  nTris = d.triangles.size() / 3;
-  std::cout << "Triangles: " << nTris << std::endl;
-
-  indicies.resize(nTris * 3);
-  for (int i = 0; i < nTris; ++i) {
-    for (int j = 0; j < 3; ++j) {
-      indicies[i * 3 + j] = d.triangles[i * 3 + j];
-    }
-  }
-  stageData();
-  auto dstop = std::chrono::high_resolution_clock::now();
-  std::cout << "D: " << (1e9 / (dstop - dstart).count()) << "FPS" << std::endl;
+void HeadlessInterpolator::interpolate(const int nPoints, const float *points,
+                                       const float *values, const int width,
+                                       const int height, const int stride_bytes,
+                                       float *output) {
+  std::vector<int> indicies;
+  std::cout << "Npoints: " << nPoints << std::endl;
+  PrepareInterpolation(nPoints, points, indicies);
+  const int nTri = indicies.size() / 3;
+  interpolate(nPoints, points, values, nTri, indicies.data(), width, height,
+              stride_bytes, output);
 }
+
+void HeadlessInterpolator::PrepareInterpolation(const int nPoints,
+                                                const float *points,
+                                                std::vector<int> &indicies) {
+  std::vector<double> pts(points, points + nPoints * 2);
+  delaunator::Delaunator d(pts);
+  indicies.clear();
+  indicies.reserve(d.triangles.size());
+  for (auto &id : d.triangles) indicies.emplace_back(id);
+}
+
+void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
+                                       const float *values,
+                                       const int nTriangles,
+                                       const int *indicies_, const int width_,
+                                       const int height_,
+                                       const int stride_bytes, float *output) {
+  std::lock_guard<std::mutex> lock(mutex);
+  points = nPoints;
+  height = height_;
+  width = width_;
+  indicies = nTriangles * 3;
+  std::cout << "Triangles: " << nTriangles << std::endl;
+  // so what is worse -- reallocating output buffer vs copying larger size?!
+  // should not matter in "real life" (= multiple interpolations of the same
+  // image size)
+  setupCopyImage();
+
+  setupVertices();
+
+  int argout_pts = 0;
+  for (int i = 0; i < nPoints; ++i) {
+    points_ptr[argout_pts++] = points_[i * 2];
+    points_ptr[argout_pts++] = points_[i * 2 + 1];
+    points_ptr[argout_pts++] = values[i];
+  }
+  memcpy((void *)indicies_ptr, (void *)indicies_, sizeof(int32_t) * indicies);
+  device->unmapMemory(*stagingBuffer.first);
+
+  rasterize();
+  vk::SubresourceLayout layout = device->getImageSubresourceLayout(
+      *outputImage, {vk::ImageAspectFlagBits::eColor});
+  const char *data = (const char *)device->mapMemory(
+      *outputMem, layout.offset, layout.arrayPitch, vk::MemoryMapFlags{});
+  const char *strided_output = reinterpret_cast<const char *>(output);
+  for (uint32_t i = 0; i < height; ++i) {
+    memcpy((void *)strided_output, (void *)data, width * sizeof(float));
+    strided_output += stride_bytes;
+    data += layout.rowPitch;
+  }
+  device->unmapMemory(*outputMem);
+}
+
+bool HeadlessInterpolator::allocatePoints() { return points > pointsAllocated; }
+
+bool HeadlessInterpolator::allocateIndicies() {
+  return indicies > indiciesAllocated;
+}
+
+void HeadlessInterpolator::setupVertices() {
+  const size_t mem_points = points * sizeof(float) * 3;
+  const size_t mem_indicies = indicies * sizeof(int32_t);
+  const size_t mem_total = mem_points + mem_indicies;
+
+  // setup vertex/index buffers
+  if (pointsAllocated < points) {
+    std::cout << "Allocating vertex buffer: " << pointsAllocated << " -> "
+              << points << std::endl;
+    vertexBuffer = createBuffer(mem_points,
+                                vk::BufferUsageFlagBits::eVertexBuffer |
+                                    vk::BufferUsageFlagBits::eTransferDst,
+                                vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+    pointsAllocated = points;
+  }
+  if (indiciesAllocated < indicies) {
+    std::cout << "Allocating index buffer: " << indiciesAllocated << " -> "
+              << indicies << std::endl;
+    indexBuffer = createBuffer(mem_indicies,
+                               vk::BufferUsageFlagBits::eIndexBuffer |
+                                   vk::BufferUsageFlagBits::eTransferDst,
+                               vk::MemoryPropertyFlagBits::eDeviceLocal);
+    indiciesAllocated = indicies;
+  }
+
+  if (mem_total > stagingAllocated) {
+    // allocate staging
+    std::cout << "Allocating staging buffer: " << stagingAllocated << " -> "
+              << mem_total << std::endl;
+    pointsAllocated = points;
+    indiciesAllocated = indicies;
+    stagingAllocated = mem_total;
+
+    vk::DeviceSize size = stagingAllocated;
+    stagingBuffer = createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
+                                 vk::MemoryPropertyFlagBits::eHostVisible |
+                                     vk::MemoryPropertyFlagBits::eHostCoherent);
+  }
+  device->mapMemory(*stagingBuffer.first, 0, mem_total, vk::MemoryMapFlags{},
+                    &stagingData);
+  points_ptr = static_cast<float *>(stagingData);
+  // Setup pointers
+  indicies_ptr = reinterpret_cast<int32_t *>(static_cast<char *>(stagingData) +
+                                             mem_points);
+
+  // setup pointers & copy buffer
+  vk::CommandBufferBeginInfo cbegin{};
+  copyBuffer->begin(&cbegin);
+  vk::BufferCopy region;
+  region.srcOffset = 0;
+  region.dstOffset = 0;
+  region.size = mem_points;
+  copyBuffer->copyBuffer(*stagingBuffer.second, *vertexBuffer.second, 1,
+                         &region);
+  region.srcOffset = mem_points;
+  region.size = mem_indicies;
+  copyBuffer->copyBuffer(*stagingBuffer.second, *indexBuffer.second, 1,
+                         &region);
+  copyBuffer->end();
+
+  // setup render pass
+  auto extent = vk::Extent2D{width, height};
+  auto beginInfo = vk::CommandBufferBeginInfo{};
+  renderBuffer->begin(beginInfo);
+  auto renderPassBeginInfo = vk::RenderPassBeginInfo{
+      *renderPass, *framebuffer, vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
+
+  vk::DeviceSize offset = 0;
+  renderBuffer->bindVertexBuffers(0, 1, &*vertexBuffer.second, &offset);
+  renderBuffer->bindIndexBuffer(*indexBuffer.second, 0, vk::IndexType::eUint32);
+
+  renderBuffer->beginRenderPass(renderPassBeginInfo,
+                                vk::SubpassContents::eInline);
+  renderBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+
+  std::cout << "Indicies: " << indicies << std::endl;
+  renderBuffer->drawIndexed(indicies, 1, 0, 0, 0);
+  renderBuffer->endRenderPass();
+  renderBuffer->end();
+}
+
+bool HeadlessInterpolator::allocateImage() {
+  // Should we reallocate iff area > old area?
+  return width > widthAllocated || height > heightAllocated;
+}
+
+void HeadlessInterpolator::setupCopyImage() {
+  vk::ImageCreateInfo imageInfo;
+  imageInfo.imageType = vk::ImageType::e2D;
+  imageInfo.format = format1d;
+  imageInfo.extent.width = width;
+  imageInfo.extent.height = height;
+  imageInfo.extent.depth = 1;
+  imageInfo.mipLevels = 1;
+  imageInfo.arrayLayers = 1;
+  if (allocateImage()) {
+    {
+      std::cout << "Allocating image: " << heightAllocated << " x "
+                << widthAllocated << "  ->  " << height << " x " << width
+                << std::endl;
+      heightAllocated = std::max(heightAllocated, height);
+      widthAllocated = std::max(widthAllocated, width);
+      imageInfo.extent.width = widthAllocated;
+      imageInfo.extent.height = heightAllocated;
+      // color attachment
+      imageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment |
+                        vk::ImageUsageFlagBits::eTransferSrc;
+      image = device->createImageUnique(imageInfo);
+
+      vk::MemoryRequirements reqs = device->getImageMemoryRequirements(*image);
+      vk::MemoryAllocateInfo outAllocInfo;
+      outAllocInfo.allocationSize = reqs.size;
+      outAllocInfo.memoryTypeIndex = findMemoryType(
+          reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+      renderMem = device->allocateMemoryUnique(outAllocInfo);
+      device->bindImageMemory(*image, *renderMem, 0);
+
+      vk::ImageViewCreateInfo viewInfo;
+      viewInfo.viewType = vk::ImageViewType::e2D;
+      viewInfo.format = format1d;
+      viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+      viewInfo.subresourceRange.baseMipLevel = 0;
+      viewInfo.subresourceRange.levelCount = 1;
+      viewInfo.subresourceRange.baseArrayLayer = 0;
+      viewInfo.subresourceRange.layerCount = 1;
+      viewInfo.image = *image;
+      imageView = device->createImageViewUnique(viewInfo);
+      // TODO: should we create framebuffer if width*height < allocated ?! Or
+      // "extent+scissors" thingies are just enough?!
+    }
+    framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
+        {}, *renderPass, 1, &(*imageView), widthAllocated, heightAllocated, 1});
+    {
+      // copy dst
+      imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+      imageInfo.tiling = vk::ImageTiling::eLinear;
+      imageInfo.usage = vk::ImageUsageFlagBits::eTransferDst;
+
+      outputImage = device->createImageUnique(imageInfo);
+      vk::MemoryRequirements reqs =
+          device->getImageMemoryRequirements(*outputImage);
+      vk::MemoryAllocateInfo outAllocInfo;
+      outAllocInfo.allocationSize = reqs.size;
+      outAllocInfo.memoryTypeIndex = findMemoryType(
+          reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+                                   vk::MemoryPropertyFlagBits::eHostCoherent);
+      outputMem = device->allocateMemoryUnique(outAllocInfo);
+      device->bindImageMemory(*outputImage, *outputMem, 0);
+    }
+  }
+  // setup copy back (only transfer subset)
+  vk::CommandBufferBeginInfo cbegin{};
+  copyBackBuffer->begin(cbegin);
+
+  vk::ImageMemoryBarrier barrier;
+  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+  barrier.subresourceRange.levelCount = 1;
+  barrier.subresourceRange.baseMipLevel = 0;
+  barrier.subresourceRange.layerCount = 1;
+  barrier.subresourceRange.baseArrayLayer = 0;
+
+  // Color -> Src
+  barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
+  barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
+  barrier.image = *image;
+  barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead |
+                          vk::AccessFlagBits::eColorAttachmentWrite;
+  barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
+  copyBackBuffer->pipelineBarrier(
+      vk::PipelineStageFlagBits::eColorAttachmentOutput,
+      vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr,
+      nullptr, barrier);
+  // Output -> Dst
+  barrier.oldLayout = vk::ImageLayout::eUndefined;
+  barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
+  barrier.image = *outputImage;
+  barrier.srcAccessMask = {};
+  barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
+                                  vk::PipelineStageFlagBits::eTransfer,
+                                  vk::DependencyFlags{}, nullptr, nullptr,
+                                  barrier);
+  vk::ImageCopy copy;
+  copy.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+  copy.dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
+  copy.extent.depth = 1;
+  copy.extent.width = width;
+  copy.extent.height = height;
+  copyBackBuffer->copyImage(*image, vk::ImageLayout::eTransferSrcOptimal,
+                            *outputImage, vk::ImageLayout::eTransferDstOptimal,
+                            copy);
+
+  // Output -> General
+  barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
+  barrier.newLayout = vk::ImageLayout::eGeneral;
+  barrier.image = *outputImage;
+  barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+  barrier.dstAccessMask = {};
+  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
+                                  vk::PipelineStageFlagBits::eBottomOfPipe,
+                                  vk::DependencyFlags{}, nullptr, nullptr,
+                                  barrier);
+
+  copyBackBuffer->end();
+}
+
 uint32_t HeadlessInterpolator::findMemoryType(
     uint32_t mask, const vk::MemoryPropertyFlags &properties) {
   auto props = physicalDevice.getMemoryProperties();
@@ -150,9 +394,10 @@ uint32_t HeadlessInterpolator::findMemoryType(
   }
   throw std::runtime_error("Incompatible memory type");
 }
-HeadlessInterpolator::BufferMem
-HeadlessInterpolator::createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
-                                   const vk::MemoryPropertyFlags &flags) {
+
+HeadlessInterpolator::BufferMem HeadlessInterpolator::createBuffer(
+    size_t sz, const vk::BufferUsageFlags &usage,
+    const vk::MemoryPropertyFlags &flags) {
   vk::BufferCreateInfo bufferInfo;
   bufferInfo.size = sz;
   bufferInfo.usage = usage;
@@ -168,67 +413,16 @@ HeadlessInterpolator::createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
 
   vk::UniqueDeviceMemory mem = device->allocateMemoryUnique(allocInfo);
   device->bindBufferMemory(*buffer, *mem, 0);
-  return std::make_pair(std::move(buffer), std::move(mem));
-}
-void HeadlessInterpolator::createStagingBuffer() {
-  vk::DeviceSize size = PTS_SIZE + IDX_MAX_SIZE;
-  stagingBuffer = createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
-                               vk::MemoryPropertyFlagBits::eHostVisible |
-                                   vk::MemoryPropertyFlagBits::eHostCoherent);
-
-  vk::CommandBufferAllocateInfo allocInfo;
-  allocInfo.level = vk::CommandBufferLevel::ePrimary;
-  allocInfo.commandPool = *commandPoolUnique;
-  allocInfo.commandBufferCount = 1;
-
-  auto foo = device->allocateCommandBuffersUnique(allocInfo);
-  copyBuffer = std::move(foo[0]);
-
-  vk::CommandBufferBeginInfo cbegin{};
-  copyBuffer->begin(&cbegin);
-  vk::BufferCopy regions[2];
-  regions[1].srcOffset = PTS_SIZE;
-  regions[0].srcOffset = 0;
-  regions[0].dstOffset = regions[1].dstOffset = 0;
-  regions[0].size = PTS_SIZE;
-  regions[1].size = IDX_MAX_SIZE;
-  copyBuffer->copyBuffer(*stagingBuffer.first, *vertexBuffer.first, 1, regions);
-  copyBuffer->copyBuffer(*stagingBuffer.first, *indexBuffer.first, 1,
-                         regions + 1);
-  copyBuffer->end();
-}
-
-void HeadlessInterpolator::stageData() {
-  int IDX_SIZE = nTris * 3 * sizeof(int);
-  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE + IDX_MAX_SIZE,
-                    vk::MemoryMapFlags{}, &stagingData);
-  { memcpy(stagingData, points.data(), N_PTS * 3 * sizeof(float)); }
-  { memcpy((uint8_t *)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE); }
-  device->unmapMemory(*stagingBuffer.second);
-}
-
-void HeadlessInterpolator::createVertexBuffer() {
-  vertexBuffer = createBuffer(PTS_SIZE,
-                              vk::BufferUsageFlagBits::eVertexBuffer |
-                                  vk::BufferUsageFlagBits::eTransferDst,
-                              vk::MemoryPropertyFlagBits::eDeviceLocal);
-}
-
-void HeadlessInterpolator::createIndexBuffer() {
-  indexBuffer = createBuffer(IDX_MAX_SIZE,
-                             vk::BufferUsageFlagBits::eIndexBuffer |
-                                 vk::BufferUsageFlagBits::eTransferDst,
-                             vk::MemoryPropertyFlagBits::eDeviceLocal);
+  return std::make_pair(std::move(mem), std::move(buffer));
 }
 
 HeadlessInterpolator::~HeadlessInterpolator() {
-  //  device->unmapMemory(*stagingBuffer.second);
+  //  device->unmapMemory(*stagingBuffer.first);
 }
 
 HeadlessInterpolator::HeadlessInterpolator(
-    const std::vector<size_t> &allowed_devices) {
-
-  (void)allowed_devices;
+    const std::vector<size_t> &allowed_devices,
+    const InterpolationOptions &opts) {
   std::cout << "Vertex shader: (" << shaders::shader_vert_spv.size()
             << " bytes)" << kernel2string(shaders::shader_vert_spv)
             << std::endl;
@@ -248,6 +442,11 @@ HeadlessInterpolator::HeadlessInterpolator(
       "VK_LAYER_LUNARG_standard_validation"
 #endif
   };
+
+  height = opts.heightPreallocated;
+  width = opts.widthPreallocated;
+  points = opts.pointsPreallocated;
+  indicies = opts.indiciesPreallocated;
 
   instance = vk::createInstanceUnique(
       vk::InstanceCreateInfo{{},
@@ -328,8 +527,7 @@ HeadlessInterpolator::HeadlessInterpolator(
   vertexBinding.inputRate = vk::VertexInputRate::eVertex;
 
   vk::VertexInputAttributeDescription vertexAttributes[] = {
-      {0, 0, format2d, 0},
-      {1, 0, format1d, 2 * sizeof(float)}};
+      {0, 0, format2d, 0}, {1, 0, format1d, 2 * sizeof(float)}};
 
   vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
   vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
@@ -438,212 +636,44 @@ HeadlessInterpolator::HeadlessInterpolator(
 
   pipeline = device->createGraphicsPipelineUnique({}, pipelineCreateInfo);
 
-  {
-    vk::ImageCreateInfo imageInfo;
-    imageInfo.imageType = vk::ImageType::e2D;
-    imageInfo.format = format1d;
-    imageInfo.extent.width = width;
-    imageInfo.extent.height = height;
-    imageInfo.extent.depth = 1;
-    imageInfo.mipLevels = 1;
-    imageInfo.arrayLayers = 1;
-    imageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment |
-                      vk::ImageUsageFlagBits::eTransferSrc;
-    image = device->createImageUnique(imageInfo);
-
-    vk::MemoryRequirements reqs = device->getImageMemoryRequirements(*image);
-    vk::MemoryAllocateInfo outAllocInfo;
-    outAllocInfo.allocationSize = reqs.size;
-    outAllocInfo.memoryTypeIndex = findMemoryType(
-        reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
-    renderMem = device->allocateMemoryUnique(outAllocInfo);
-    device->bindImageMemory(*image, *renderMem, 0);
-
-    vk::ImageViewCreateInfo viewInfo;
-    viewInfo.viewType = vk::ImageViewType::e2D;
-    viewInfo.format = format1d;
-    viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-    viewInfo.subresourceRange.baseMipLevel = 0;
-    viewInfo.subresourceRange.levelCount = 1;
-    viewInfo.subresourceRange.baseArrayLayer = 0;
-    viewInfo.subresourceRange.layerCount = 1;
-    viewInfo.image = *image;
-    imageView = device->createImageViewUnique(viewInfo);
-  }
-
-  framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-      {}, *renderPass, 1, &(*imageView), extent.width, extent.height, 1});
-
   commandPoolUnique = device->createCommandPoolUnique(
       {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
        static_cast<uint32_t>(graphicsQueueFamilyIndex)});
+#if 0
   createVertexBuffer();
   createIndexBuffer();
   createStagingBuffer();
+#endif
 
   auto bar = device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
-      *commandPoolUnique, vk::CommandBufferLevel::ePrimary, 1));
+      *commandPoolUnique, vk::CommandBufferLevel::ePrimary, 3));
   renderBuffer = std::move(bar[0]);
+  copyBuffer = std::move(bar[1]);
+  copyBackBuffer = std::move(bar[2]);
 
   deviceQueue = device->getQueue(graphicsQueueFamilyIndex, 0);
 
-  for (int i = 0; i < 4; ++i)
-    clearValues.color.float32[i] = std::nan("");
+  for (int i = 0; i < 4; ++i) clearValues.color.float32[i] = std::nan("");
 
-  vk::ImageCreateInfo imgInfo;
-  imgInfo.imageType = vk::ImageType::e2D;
-  imgInfo.format = format1d;
-  imgInfo.extent.width = width;
-  imgInfo.extent.height = height;
-  imgInfo.extent.depth = 1;
-  imgInfo.arrayLayers = 1;
-  imgInfo.mipLevels = 1;
-  imgInfo.initialLayout = vk::ImageLayout::eUndefined;
-  imgInfo.tiling = vk::ImageTiling::eLinear;
-  imgInfo.usage = vk::ImageUsageFlagBits::eTransferDst;
-
-  outputImage = device->createImageUnique(imgInfo);
-  vk::MemoryRequirements reqs =
-      device->getImageMemoryRequirements(*outputImage);
-  vk::MemoryAllocateInfo outAllocInfo;
-  outAllocInfo.allocationSize = reqs.size;
-  outAllocInfo.memoryTypeIndex = findMemoryType(
-      reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
-                               vk::MemoryPropertyFlagBits::eHostCoherent);
-  outputMem = device->allocateMemoryUnique(outAllocInfo);
-  device->bindImageMemory(*outputImage, *outputMem, 0);
-
-  vk::CommandBufferAllocateInfo allocInfo;
-  allocInfo.level = vk::CommandBufferLevel::ePrimary;
-  allocInfo.commandPool = *commandPoolUnique;
-  allocInfo.commandBufferCount = 1;
-  auto foo = device->allocateCommandBuffersUnique(allocInfo);
-  copyBackBuffer = std::move(foo[0]);
-
-  vk::CommandBufferBeginInfo cbegin{};
-  copyBackBuffer->begin(cbegin);
-
-  vk::ImageMemoryBarrier barrier;
-  barrier.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-  barrier.subresourceRange.levelCount = 1;
-  barrier.subresourceRange.baseMipLevel = 0;
-  barrier.subresourceRange.layerCount = 1;
-  barrier.subresourceRange.baseArrayLayer = 0;
-
-  // Color -> Src
-  barrier.oldLayout = vk::ImageLayout::eColorAttachmentOptimal;
-  barrier.newLayout = vk::ImageLayout::eTransferSrcOptimal;
-  barrier.image = *image;
-  barrier.srcAccessMask = vk::AccessFlagBits::eColorAttachmentRead |
-                          vk::AccessFlagBits::eColorAttachmentWrite;
-  barrier.dstAccessMask = vk::AccessFlagBits::eTransferRead;
-  copyBackBuffer->pipelineBarrier(
-      vk::PipelineStageFlagBits::eColorAttachmentOutput,
-      vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, nullptr,
-      nullptr, barrier);
-  // Output -> Dst
-  barrier.oldLayout = vk::ImageLayout::eUndefined;
-  barrier.newLayout = vk::ImageLayout::eTransferDstOptimal;
-  barrier.image = *outputImage;
-  barrier.srcAccessMask = {};
-  barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTopOfPipe,
-                                  vk::PipelineStageFlagBits::eTransfer,
-                                  vk::DependencyFlags{}, nullptr, nullptr,
-                                  barrier);
-  vk::ImageCopy copy;
-  copy.srcSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
-  copy.dstSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1};
-  copy.extent.depth = 1;
-  copy.extent.width = width;
-  copy.extent.height = height;
-  copyBackBuffer->copyImage(*image, vk::ImageLayout::eTransferSrcOptimal,
-                            *outputImage, vk::ImageLayout::eTransferDstOptimal,
-                            copy);
-
-  // Output -> General
-  barrier.oldLayout = vk::ImageLayout::eTransferDstOptimal;
-  barrier.newLayout = vk::ImageLayout::eGeneral;
-  barrier.image = *outputImage;
-  barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-  barrier.dstAccessMask = {};
-  copyBackBuffer->pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
-                                  vk::PipelineStageFlagBits::eBottomOfPipe,
-                                  vk::DependencyFlags{}, nullptr, nullptr,
-                                  barrier);
-
-  copyBackBuffer->end();
   vk::FenceCreateInfo info;
   fence = device->createFenceUnique(info);
+
+  setupCopyImage();
+  setupVertices();
+  device->unmapMemory(*stagingBuffer.first);
 }
 
-void HeadlessInterpolator::run() {
-  auto start = std::chrono::high_resolution_clock::now();
-  int frames = 0;
-
-  vk::CommandBuffer buffers[]{*copyBuffer, *renderBuffer, *copyBackBuffer};
-
+void HeadlessInterpolator::rasterize() {
+  vk::CommandBuffer buffers[] = {*copyBuffer, *renderBuffer, *copyBackBuffer};
   vk::SubmitInfo submitInfo;
-  submitInfo.pSignalSemaphores = nullptr;
-  submitInfo.pWaitSemaphores = nullptr;
-  submitInfo.waitSemaphoreCount = 0;
-  submitInfo.signalSemaphoreCount = 0;
+  submitInfo.waitSemaphoreCount = submitInfo.signalSemaphoreCount = 0;
   submitInfo.pWaitDstStageMask = nullptr;
   submitInfo.commandBufferCount = 3;
   submitInfo.pCommandBuffers = buffers;
 
-  while (true) {
-    createPoints();
-    auto extent = vk::Extent2D{width, height};
-    auto beginInfo = vk::CommandBufferBeginInfo{};
-    renderBuffer->begin(beginInfo);
-    auto renderPassBeginInfo = vk::RenderPassBeginInfo{
-        *renderPass, *framebuffer, vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
-
-    vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-    renderBuffer->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
-    renderBuffer->bindIndexBuffer(*indexBuffer.first, 0,
-                                  vk::IndexType::eUint32);
-
-    renderBuffer->beginRenderPass(renderPassBeginInfo,
-                                  vk::SubpassContents::eInline);
-    renderBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
-
-    renderBuffer->drawIndexed(nTris * 3, 1, 0, 0, 0);
-    renderBuffer->endRenderPass();
-    renderBuffer->end();
-
-    device->resetFences(1, &*fence);
-    deviceQueue.submit(submitInfo, fence.get());
-    device->waitForFences(1, &*fence, true,
-                          std::numeric_limits<uint64_t>::max());
-
-    frames++;
-    auto stop = std::chrono::high_resolution_clock::now();
-    if (frames % 1000 == 0) {
-      std::cout << "FPS: " << (frames * 1e9 / (stop - start).count())
-                << std::endl;
-    }
-
-    vk::SubresourceLayout layout = device->getImageSubresourceLayout(
-        *outputImage, {vk::ImageAspectFlagBits::eColor});
-    const char *data = (const char *)device->mapMemory(
-        *outputMem, layout.offset, layout.arrayPitch, vk::MemoryMapFlags{});
-    (void)data;
-
-#if 0   
-    static int id = 0;
-    std::ofstream res("foo" + std::to_string(id++ % 1000) + ".ppm",
-                      std::ios_base::binary);
-    for (uint32_t y = 0; y < height; ++y) {
-      uint32_t *row = (uint32_t *)data;
-      res.write((char *)row, sizeof(float) * width);
-      data += layout.rowPitch;
-    }
-    res.close();
-#endif
-    device->unmapMemory(*outputMem);
-  }
+  device->resetFences(1, &*fence);
+  deviceQueue.submit(submitInfo, fence.get());
+  device->waitForFences(1, &*fence, true, std::numeric_limits<uint64_t>::max());
 }
 
-} // namespace vulkan_interpolator
+}  // namespace vulkan_interpolator
