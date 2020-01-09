@@ -16,7 +16,9 @@ struct InterpolationOptions {
 };
 
 struct HeadlessInterpolator {
-  HeadlessInterpolator(const std::vector<size_t>& devices, const InterpolationOptions &opts = InterpolationOptions());
+  HeadlessInterpolator(
+      const std::vector<size_t>& devices,
+      const InterpolationOptions& opts = InterpolationOptions());
   ~HeadlessInterpolator();
   void run();
 
@@ -47,19 +49,18 @@ struct HeadlessInterpolator {
   void setupCopyImage();
   // setup renderpass
   void setupRenderpass();
-  // Perform rasterizer run & map image memory 
+  // Perform rasterizer run & map image memory
   void rasterize();
 
   uint32_t heightAllocated = 0, widthAllocated = 0, pointsAllocated = 0,
-      indiciesAllocated = 0;
-   size_t stagingAllocated = 0;
+           indiciesAllocated = 0;
+  size_t stagingAllocated = 0;
 
   uint32_t height, width, points, indicies;
   // points into staging buffer
   float* points_ptr;
   // points into staging buffer
   int32_t* indicies_ptr;
-  
 
   const vk::Format format1d = vk::Format::eR32Sfloat,
                    format2d = vk::Format::eR32G32Sfloat;
@@ -75,7 +76,7 @@ struct HeadlessInterpolator {
   vk::Queue deviceQueue;
   vk::UniqueCommandBuffer copyBuffer, copyBackBuffer, renderBuffer;
   vk::PhysicalDevice physicalDevice;
-  using BufferMem = std::pair< vk::UniqueDeviceMemory, vk::UniqueBuffer>;
+  using BufferMem = std::pair<vk::UniqueDeviceMemory, vk::UniqueBuffer>;
   BufferMem vertexBuffer, indexBuffer, stagingBuffer;
   vk::UniqueDeviceMemory outputMem, renderMem;
   vk::UniqueImage image;

@@ -148,10 +148,13 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
 
   setupVertices();
 
+  float scale_w = 2.f / (widthAllocated - 1),
+        scale_h = 2.f / (heightAllocated - 1);
+
   int argout_pts = 0;
   for (int i = 0; i < nPoints; ++i) {
-    points_ptr[argout_pts++] = points_[i * 2];
-    points_ptr[argout_pts++] = points_[i * 2 + 1];
+    points_ptr[argout_pts++] = points_[i * 2] * scale_w - 1.f;
+    points_ptr[argout_pts++] = points_[i * 2 + 1] * scale_h - 1.f;
     points_ptr[argout_pts++] = values[i];
   }
   memcpy((void *)indicies_ptr, (void *)indicies_, sizeof(int32_t) * indicies);
