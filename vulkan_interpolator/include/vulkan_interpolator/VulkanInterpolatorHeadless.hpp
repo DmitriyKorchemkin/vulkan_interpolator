@@ -25,12 +25,12 @@ struct HeadlessInterpolator {
   // Triangulate and rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int width, const int height, const int stride_bytes,
-                   float *output, float dt, float db, float dl, float dr);
+                   float *output, float dt, float db, float dl, float dr, float sx, float sy);
   // Just rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int nTriangles, const int *indicies, const int width,
                    const int height, const int stride_bytes, float *output,
-                   float dt, float db, float dl, float dr);
+                   float dt, float db, float dl, float dr, float sx, float sy);
 
   // Compute delaunay triangulation
   static void PrepareInterpolation(const int nPoints, const float* points,

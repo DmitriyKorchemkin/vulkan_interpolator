@@ -111,13 +111,13 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points,
                                        const float *values, const int width,
                                        const int height, const int stride_bytes,
                                        float *output, float dt, float db,
-                                       float dl, float dr) {
+                                       float dl, float dr, float sx, float sy) {
   std::vector<int> indicies;
   std::cout << "Npoints: " << nPoints << std::endl;
   PrepareInterpolation(nPoints, points, indicies);
   const int nTri = indicies.size() / 3;
   interpolate(nPoints, points, values, nTri, indicies.data(), width, height,
-              stride_bytes, output, dt, db, dl, dr);
+              stride_bytes, output, dt, db, dl, dr, sx, sy);
 }
 
 void HeadlessInterpolator::PrepareInterpolation(const int nPoints,
@@ -136,7 +136,7 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
                                        const int *indicies_, const int width_,
                                        const int height_,
                                        const int stride_bytes, float *output,
-                                       float dt, float db, float dl, float dr) {
+                                       float dt, float db, float dl, float dr, float sx, float sy) {
   std::lock_guard<std::mutex> lock(mutex);
   points = nPoints;
   height = height_;
@@ -150,8 +150,8 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
 
   setupVertices();
 
-  float scale_w = 2.f / (widthAllocated - 1 + dr - dl),
-        scale_h = 2.f / (heightAllocated - 1 + db - dt);
+  float scale_w = 2.f / (widthAllocated - 1 + dr - dl) * sx,
+        scale_h = 2.f / (heightAllocated - 1 + db - dt) * sy;
   float bias_w = -(widthAllocated - 1 + dl + dr) * scale_w / 2.f;
   float bias_h = -(heightAllocated - 1 + dt + db) * scale_h / 2.f;
 

@@ -20,7 +20,6 @@ int main(int argc, char **argv) {
 
   std::mt19937 rng;
   std::uniform_int_distribution<int> rwh(1000, 2000), rn(10, 15);
-  std::vector<float> data;
   std::uniform_real_distribution<float> runif(-1.f, 1.f);
 
   for (int h = 0; h < 30; ++h) {
@@ -37,17 +36,19 @@ int main(int argc, char **argv) {
       points[i * 2 + 1] = rh(rng);
       values[i] = runif(rng);
     }
-    data.resize(width * height);
 
     std::vector<int> tris;
     vulkan_interpolator::HeadlessInterpolator::PrepareInterpolation(
         N, points.data(), tris);
 
     std::vector<float> delta_values;
+    float signs[] = {-1.f, 1.f};
     float deltas[] = {-1.5f, -1.f, -.5f, 0.f, .5f, 1.f, 1.5f};
-    float minDeltas[4];
+    float minDeltas[6];
     float minDelta = 1e100;
     int cntD = 0;
+    for (auto& sx: signs)
+      for (auto& sy: signs)
     for (auto &dt : deltas)
       for (auto &db : deltas)
         for (auto &dl : deltas)
@@ -56,19 +57,22 @@ int main(int argc, char **argv) {
             delta_values.push_back(db);
             delta_values.push_back(dl);
             delta_values.push_back(dr);
+            delta_values.push_back(sx);
+            delta_values.push_back(sy);
             ++cntD;
           }
     std::vector<double> misfits(cntD);
     std::vector<int> totals(cntD), totalsIn(cntD);
 
     tbb::parallel_for(tbb::blocked_range<int>(0, cntD), [&](const auto &range) {
+  std::vector<float> data(width*height);
       for (int id = range.begin(); id != range.end(); ++id) {
-        const float dt = delta_values[id * 4], db = delta_values[id * 4 + 1],
-                    dl = delta_values[id * 4 + 2],
-                    dr = delta_values[id * 4 + 3];
+        const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
+                    dl = delta_values[id * 6 + 2],
+                    dr = delta_values[id * 6 + 3], sx = delta_values[id * 6 + 4], sy = delta_values[id * 6 + 5];
         interpolator.interpolate(N, points.data(), values.data(), width, height,
                                  width * sizeof(float), data.data(), dt, db, dl,
-                                 dr);
+                                 dr, sx, sy);
         int total = 0, totalIn = 0;
         double misfit = 0.;
         for (int y = 0; y < height; ++y) {
@@ -106,29 +110,31 @@ int main(int argc, char **argv) {
       }
     });
     for (int id = 0; id < cntD; ++id) {
-      const float dt = delta_values[id * 4], db = delta_values[id * 4 + 1],
-                  dl = delta_values[id * 4 + 2], dr = delta_values[id * 4 + 3];
+      const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
+                  dl = delta_values[id * 6 + 2], dr = delta_values[id * 6 + 3], sx= delta_values[id*6+4], sy = delta_values[id * 6 + 5];
       const double misfit = misfits[id];
-      if (minDelta < misfit) {
+      if (minDelta > misfit) {
         minDelta = misfit;
-        minDeltas[0] = dt;
-        minDeltas[1] = db;
-        minDeltas[2] = dl;
-        minDeltas[3] = dr;
+        minDeltas[0] = sx;
+        minDeltas[1] = sy;
+        minDeltas[2] = dt;
+        minDeltas[3] = db;
+        minDeltas[4] = dl;
+        minDeltas[5] = dr;
       }
-      std::cout << dt << " " << db << " " << dl << " " << dr << " " << misfit
+      std::cout << sx << " " << sy << " " << dt << " " << db << " " << dl << " " << dr << " " << misfit
                 << " @ " << totals[id] << "/" << totalsIn[id] << "px"
                 << std::endl;
     }
 
     std::cout << "Best deltas: " << minDeltas[0] << " " << minDeltas[1] << " "
-              << minDeltas[2] << " " << minDeltas[3] << "@" << minDelta
+              << minDeltas[2] << " " << minDeltas[3] << " " << minDeltas[4] << " " << minDeltas[5] << " @" << minDelta
               << std::endl;
     std::cout << "==================" << std::endl;
   }
-
+#if 0
   std::ofstream out("out.bin", std::ios_base::binary);
   out.write(reinterpret_cast<char *>(data.data()), data.size() * sizeof(float));
-
+#endif
   return 0;
 }
