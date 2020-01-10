@@ -19,10 +19,10 @@ int main(int argc, char **argv) {
   vulkan_interpolator::HeadlessInterpolator interpolator({device});
 
   std::mt19937 rng;
-  std::uniform_int_distribution<int> rwh(1000, 2000), rn(10, 15);
+  std::uniform_int_distribution<int> rwh(1000, 2000), rn(3, 4);
   std::uniform_real_distribution<float> runif(-1.f, 1.f);
 
-  for (int h = 0; h < 30; ++h) {
+  for (int h = 0; h < 1; ++h) {
     const int N = rn(rng);
 
     int width = rwh(rng);
@@ -43,33 +43,38 @@ int main(int argc, char **argv) {
 
     std::vector<float> delta_values;
     float signs[] = {-1.f, 1.f};
-    float deltas[] = {-1.5f, -1.f, -.5f, 0.f, .5f, 1.f, 1.5f};
+    float deltas[] = {0.f};  // {-1.5f, -1.f, -.5f, 0.f, .5f, 1.f, 1.5f};
     float minDeltas[6];
     float minDelta = 1e100;
     int cntD = 0;
-    for (auto& sx: signs)
-      for (auto& sy: signs)
-    for (auto &dt : deltas)
-      for (auto &db : deltas)
-        for (auto &dl : deltas)
-          for (auto &dr : deltas) {
-            delta_values.push_back(dt);
-            delta_values.push_back(db);
-            delta_values.push_back(dl);
-            delta_values.push_back(dr);
-            delta_values.push_back(sx);
-            delta_values.push_back(sy);
-            ++cntD;
-          }
+    for (auto &sx : signs)
+      for (auto &sy : signs)
+        for (auto &dt : deltas)
+          for (auto &db : deltas)
+            for (auto &dl : deltas)
+              for (auto &dr : deltas) {
+                delta_values.push_back(dt);
+                delta_values.push_back(db);
+                delta_values.push_back(dl);
+                delta_values.push_back(dr);
+                delta_values.push_back(sx);
+                delta_values.push_back(sy);
+                ++cntD;
+              }
     std::vector<double> misfits(cntD);
     std::vector<int> totals(cntD), totalsIn(cntD);
 
     tbb::parallel_for(tbb::blocked_range<int>(0, cntD), [&](const auto &range) {
-  std::vector<float> data(width*height);
+      std::vector<float> data(width * height),
+          data_golden(width * height, std::nan(""));
       for (int id = range.begin(); id != range.end(); ++id) {
+        data_golden.clear();
+        data_golden.resize(data.size(), std::nan(""));
         const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
                     dl = delta_values[id * 6 + 2],
-                    dr = delta_values[id * 6 + 3], sx = delta_values[id * 6 + 4], sy = delta_values[id * 6 + 5];
+                    dr = delta_values[id * 6 + 3],
+                    sx = delta_values[id * 6 + 4],
+                    sy = delta_values[id * 6 + 5];
         interpolator.interpolate(N, points.data(), values.data(), width, height,
                                  width * sizeof(float), data.data(), dt, db, dl,
                                  dr, sx, sy);
@@ -88,20 +93,41 @@ int main(int argc, char **argv) {
                                  .transpose();
                 b[iii] = values[tris[tri + iii]];
               }
-              Eigen::Vector3d c = M.lu().solve(b);
+              //      Eigen::Vector3d c = M.lu().solve(b);
               Eigen::Vector3d gamma = M.transpose().lu().solve(pt);
               if (gamma.array().maxCoeff() >= 1 ||
-                  gamma.array().minCoeff() <= 0.)
+                  gamma.array().minCoeff() <= 0.) {
+                data_golden[y * width + x] = std::nan("");
                 continue;
+              }
               totalIn++;
-              if (std::isnan(data[y * width + x]))
-                continue;
-              double diff = pt.dot(c) - data[y * width + x];
+              data_golden[y * width + x] = gamma.dot(b);
+              if (std::isnan(data[y * width + x])) continue;
+              double diff = gamma.dot(b) - data[y * width + x];
               misfit += diff * diff;
               total++;
             }
           }
         }
+        static std::mutex mutex;
+        std::lock_guard lock(mutex);
+        std::ofstream of("out.m", std::ios_base::app);
+        of << "M" << id << " = [";
+        for (int y = 0; y < height; ++y) {
+          for (int x = 0; x < width; ++x) {
+            of << data[y * width + x]
+               << (x + 1 == width ? y + 1 == height ? ']' : ';' : ',');
+          }
+        }
+        of << ";\n";
+        of << "G" << id << " = [";
+        for (int y = 0; y < height; ++y) {
+          for (int x = 0; x < width; ++x) {
+            of << data_golden[y * width + x]
+               << (x + 1 == width ? y + 1 == height ? ']' : ';' : ',');
+          }
+        }
+        of << ";\n";
         std::cout << '#' << std::flush;
         misfit = std::sqrt(misfit / total);
         misfits[id] = misfit;
@@ -111,7 +137,8 @@ int main(int argc, char **argv) {
     });
     for (int id = 0; id < cntD; ++id) {
       const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
-                  dl = delta_values[id * 6 + 2], dr = delta_values[id * 6 + 3], sx= delta_values[id*6+4], sy = delta_values[id * 6 + 5];
+                  dl = delta_values[id * 6 + 2], dr = delta_values[id * 6 + 3],
+                  sx = delta_values[id * 6 + 4], sy = delta_values[id * 6 + 5];
       const double misfit = misfits[id];
       if (minDelta > misfit) {
         minDelta = misfit;
@@ -122,14 +149,14 @@ int main(int argc, char **argv) {
         minDeltas[4] = dl;
         minDeltas[5] = dr;
       }
-      std::cout << sx << " " << sy << " " << dt << " " << db << " " << dl << " " << dr << " " << misfit
-                << " @ " << totals[id] << "/" << totalsIn[id] << "px"
-                << std::endl;
+      std::cout << sx << " " << sy << " " << dt << " " << db << " " << dl << " "
+                << dr << " " << misfit << " @ " << totals[id] << "/"
+                << totalsIn[id] << "px" << std::endl;
     }
 
     std::cout << "Best deltas: " << minDeltas[0] << " " << minDeltas[1] << " "
-              << minDeltas[2] << " " << minDeltas[3] << " " << minDeltas[4] << " " << minDeltas[5] << " @" << minDelta
-              << std::endl;
+              << minDeltas[2] << " " << minDeltas[3] << " " << minDeltas[4]
+              << " " << minDeltas[5] << " @" << minDelta << std::endl;
     std::cout << "==================" << std::endl;
   }
 #if 0
