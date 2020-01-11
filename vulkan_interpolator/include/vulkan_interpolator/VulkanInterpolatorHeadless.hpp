@@ -9,8 +9,8 @@
 namespace vulkan_interpolator {
 
 struct InterpolationOptions {
-  int heightPreallocated = 1024;
-  int widthPreallocated = 1024;
+  int heightPreallocated = 1000;
+  int widthPreallocated = 1000;
   int pointsPreallocated = 10000;
   int indiciesPreallocated = 30000;
 };
@@ -54,7 +54,7 @@ struct HeadlessInterpolator {
   void rasterize();
 
   uint32_t heightAllocated = 0, widthAllocated = 0, pointsAllocated = 0,
-           indiciesAllocated = 0;
+           indiciesAllocated = 0, widthLast=-1, heightLast=-1;
   size_t stagingAllocated = 0;
 
   uint32_t height, width, points, indicies;

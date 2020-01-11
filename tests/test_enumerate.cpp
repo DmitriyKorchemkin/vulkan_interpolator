@@ -22,7 +22,7 @@ int main(int argc, char **argv) {
   std::uniform_int_distribution<int> rwh(1000, 2000), rn(3, 4);
   std::uniform_real_distribution<float> runif(-1.f, 1.f);
 
-  for (int h = 0; h < 1; ++h) {
+  for (int h = 0; h < 4; ++h) {
     const int N = rn(rng);
 
     int width = rwh(rng);
@@ -34,16 +34,18 @@ int main(int argc, char **argv) {
     for (int i = 0; i < N; ++i) {
       points[i * 2] = rw(rng);
       points[i * 2 + 1] = rh(rng);
+      std::cout << points[i * 2] << " " << points[i * 2 + 1] << '\n';
       values[i] = runif(rng);
     }
 
     std::vector<int> tris;
     vulkan_interpolator::HeadlessInterpolator::PrepareInterpolation(
         N, points.data(), tris);
+    std::cout << "Tris size: " << tris.size() << '\n';
 
     std::vector<float> delta_values;
-    float signs[] = {-1.f, 1.f};
-    float deltas[] = {0.f};  // {-1.5f, -1.f, -.5f, 0.f, .5f, 1.f, 1.5f};
+    float signs[] = {1.f};
+    float deltas[] = {-1.f, 0.5f, 0.f, 0.5f, 1.f};//0.f};  // {-1.5f, -1.f, -.5f, 0.f, .5f, 1.f, 1.5f};
     float minDeltas[6];
     float minDelta = 1e100;
     int cntD = 0;
@@ -87,17 +89,15 @@ int main(int argc, char **argv) {
               Eigen::Matrix3d M;
               Eigen::Vector3d b;
               for (int iii = 0; iii < 3; ++iii) {
-                M.row(iii) = Eigen::Vector2d(points[tris[tri + iii] * 2],
+                M.col(iii) = Eigen::Vector2d(points[tris[tri + iii] * 2],
                                              points[tris[tri + iii] * 2 + 1])
-                                 .homogeneous()
-                                 .transpose();
+                                 .homogeneous();
                 b[iii] = values[tris[tri + iii]];
               }
               //      Eigen::Vector3d c = M.lu().solve(b);
-              Eigen::Vector3d gamma = M.transpose().lu().solve(pt);
+              Eigen::Vector3d gamma = M.lu().solve(pt);
               if (gamma.array().maxCoeff() >= 1 ||
                   gamma.array().minCoeff() <= 0.) {
-                data_golden[y * width + x] = std::nan("");
                 continue;
               }
               totalIn++;

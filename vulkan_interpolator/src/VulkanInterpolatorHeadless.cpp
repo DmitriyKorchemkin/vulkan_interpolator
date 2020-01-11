@@ -150,10 +150,10 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
 
   setupVertices();
 
-  float scale_w = 2.f / (widthAllocated - 1 + dr - dl) * sx,
-        scale_h = 2.f / (heightAllocated - 1 + db - dt) * sy;
-  float bias_w = -(widthAllocated - 1 + dl + dr) * scale_w / 2.f;
-  float bias_h = -(heightAllocated - 1 + dt + db) * scale_h / 2.f;
+  float scale_w = 2.f / (width - 1 + dr - dl) * sx,
+        scale_h = 2.f / (height - 1 + db - dt) * sy;
+  float bias_w = -(width - 1 + dl + dr) * scale_w / 2.f;
+  float bias_h = -(height - 1 + dt + db) * scale_h / 2.f;
 
   std::cout << heightAllocated << " x " << widthAllocated << " " << scale_w
             << " " << scale_h << " " << bias_w << " " << bias_h << std::endl;
@@ -318,8 +318,6 @@ void HeadlessInterpolator::setupCopyImage() {
       // TODO: should we create framebuffer if width*height < allocated ?! Or
       // "extent+scissors" thingies are just enough?!
     }
-    framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-        {}, *renderPass, 1, &(*imageView), widthAllocated, heightAllocated, 1});
     {
       // copy dst
       imageInfo.initialLayout = vk::ImageLayout::eUndefined;
@@ -338,6 +336,11 @@ void HeadlessInterpolator::setupCopyImage() {
       device->bindImageMemory(*outputImage, *outputMem, 0);
     }
   }
+
+  if (width == widthLast && height == heightLast)
+    return;
+  widthLast = width;
+  heightLast = height;
   // setup copy back (only transfer subset)
   vk::CommandBufferBeginInfo cbegin{};
   copyBackBuffer->begin(cbegin);
@@ -392,6 +395,135 @@ void HeadlessInterpolator::setupCopyImage() {
                                   barrier);
 
   copyBackBuffer->end();
+
+  // pipeline setup
+  auto vertShaderStageInfo = vk::PipelineShaderStageCreateInfo{
+      {}, vk::ShaderStageFlagBits::eVertex, *vertexShaderModule, "main"};
+
+  auto fragShaderStageInfo = vk::PipelineShaderStageCreateInfo{
+      {}, vk::ShaderStageFlagBits::eFragment, *fragmentShaderModule, "main"};
+
+  auto pipelineShaderStages = std::vector<vk::PipelineShaderStageCreateInfo>{
+      vertShaderStageInfo, fragShaderStageInfo};
+
+  vk::VertexInputBindingDescription vertexBinding;
+  vertexBinding.binding = 0;
+  vertexBinding.stride = sizeof(float) * 3;
+  vertexBinding.inputRate = vk::VertexInputRate::eVertex;
+
+  vk::VertexInputAttributeDescription vertexAttributes[] = {
+      {0, 0, format2d, 0}, {1, 0, format1d, 2 * sizeof(float)}};
+
+  vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+  vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
+  vertexInputInfo.pVertexBindingDescriptions = &vertexBinding;
+  vertexInputInfo.vertexAttributeDescriptionCount = 2;
+  vertexInputInfo.vertexBindingDescriptionCount = 1;
+
+  auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{
+      {}, vk::PrimitiveTopology::eTriangleList, false};
+
+  auto extent = vk::Extent2D{width, height};
+
+  auto viewport = vk::Viewport{
+      0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height),
+      0.0f, 1.0f};
+
+  auto scissor = vk::Rect2D{{0, 0}, extent};
+
+  auto viewportState =
+      vk::PipelineViewportStateCreateInfo{{}, 1, &viewport, 1, &scissor};
+
+  auto rasterizer = vk::PipelineRasterizationStateCreateInfo{
+      {},
+      /*depthClamp*/ false,
+      /*rasterizeDiscard*/ false,
+      vk::PolygonMode::eFill,
+      {},
+      /*frontFace*/ vk::FrontFace::eClockwise,
+      {},
+      {},
+      {},
+      {},
+      1.0f};
+
+  auto multisampling = vk::PipelineMultisampleStateCreateInfo{
+      {}, vk::SampleCountFlagBits::e1, false, 1.0};
+
+  auto colorBlendAttachment = vk::PipelineColorBlendAttachmentState{
+      {},
+      /*srcCol*/ vk::BlendFactor::eOne,
+      /*dstCol*/ vk::BlendFactor::eZero,
+      /*colBlend*/ vk::BlendOp::eAdd,
+      /*srcAlpha*/ vk::BlendFactor::eOne,
+      /*dstAlpha*/ vk::BlendFactor::eZero,
+      /*alphaBlend*/ vk::BlendOp::eAdd,
+      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
+          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
+
+  auto colorBlending = vk::PipelineColorBlendStateCreateInfo{
+      {},
+      /*logicOpEnable=*/false,
+      vk::LogicOp::eCopy,
+      /*attachmentCount=*/1,
+      /*colourAttachments=*/&colorBlendAttachment};
+
+  pipelineLayout = device->createPipelineLayoutUnique({}, nullptr);
+
+  auto colorAttachment =
+      vk::AttachmentDescription{{},
+                                format1d,
+                                vk::SampleCountFlagBits::e1,
+                                vk::AttachmentLoadOp::eClear,
+                                vk::AttachmentStoreOp::eStore,
+                                {},
+                                {},
+                                {},
+                                vk::ImageLayout::eColorAttachmentOptimal};
+
+  auto colourAttachmentRef =
+      vk::AttachmentReference{0, vk::ImageLayout::eColorAttachmentOptimal};
+
+  auto subpass = vk::SubpassDescription{{},
+                                        vk::PipelineBindPoint::eGraphics,
+                                        /*inAttachmentCount*/ 0,
+                                        nullptr,
+                                        1,
+                                        &colourAttachmentRef};
+
+  std::array<vk::SubpassDependency, 1> subpassDependency = {
+      vk::SubpassDependency{VK_SUBPASS_EXTERNAL, 0,
+                            vk::PipelineStageFlagBits::eBottomOfPipe,
+                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
+                            vk::AccessFlagBits::eMemoryRead,
+                            vk::AccessFlagBits::eColorAttachmentRead |
+                                vk::AccessFlagBits::eColorAttachmentWrite,
+                            vk::DependencyFlagBits::eByRegion},
+  };
+
+  renderPass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
+      {}, 1, &colorAttachment, 1, &subpass, 1, &subpassDependency[0]});
+    framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
+        {}, *renderPass, 1, &(*imageView), widthAllocated, heightAllocated, 1});
+
+  auto pipelineCreateInfo =
+      vk::GraphicsPipelineCreateInfo{{},
+                                     2,
+                                     pipelineShaderStages.data(),
+                                     &vertexInputInfo,
+                                     &inputAssembly,
+                                     nullptr,
+                                     &viewportState,
+                                     &rasterizer,
+                                     &multisampling,
+                                     nullptr,
+                                     &colorBlending,
+                                     nullptr,
+                                     *pipelineLayout,
+                                     *renderPass,
+                                     0};
+
+  pipeline = device->createGraphicsPipelineUnique({}, pipelineCreateInfo);
 }
 
 uint32_t HeadlessInterpolator::findMemoryType(
@@ -509,8 +641,6 @@ HeadlessInterpolator::HeadlessInterpolator(
       vk::DeviceCreateInfo(vk::DeviceCreateFlags(), queueCreateInfos.size(),
                            queueCreateInfos.data(), 0, nullptr, 0, nullptr));
 
-  auto extent = vk::Extent2D{width, height};
-
   auto vertShaderCreateInfo = vk::ShaderModuleCreateInfo{
       {},
       shaders::shader_vert_spv.size(),
@@ -522,129 +652,6 @@ HeadlessInterpolator::HeadlessInterpolator(
       reinterpret_cast<const uint32_t *>(shaders::shader_frag_spv.data())};
   fragmentShaderModule = device->createShaderModuleUnique(fragShaderCreateInfo);
 
-  auto vertShaderStageInfo = vk::PipelineShaderStageCreateInfo{
-      {}, vk::ShaderStageFlagBits::eVertex, *vertexShaderModule, "main"};
-
-  auto fragShaderStageInfo = vk::PipelineShaderStageCreateInfo{
-      {}, vk::ShaderStageFlagBits::eFragment, *fragmentShaderModule, "main"};
-
-  auto pipelineShaderStages = std::vector<vk::PipelineShaderStageCreateInfo>{
-      vertShaderStageInfo, fragShaderStageInfo};
-
-  vk::VertexInputBindingDescription vertexBinding;
-  vertexBinding.binding = 0;
-  vertexBinding.stride = sizeof(float) * 3;
-  vertexBinding.inputRate = vk::VertexInputRate::eVertex;
-
-  vk::VertexInputAttributeDescription vertexAttributes[] = {
-      {0, 0, format2d, 0}, {1, 0, format1d, 2 * sizeof(float)}};
-
-  vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
-  vertexInputInfo.pVertexAttributeDescriptions = vertexAttributes;
-  vertexInputInfo.pVertexBindingDescriptions = &vertexBinding;
-  vertexInputInfo.vertexAttributeDescriptionCount = 2;
-  vertexInputInfo.vertexBindingDescriptionCount = 1;
-
-  auto inputAssembly = vk::PipelineInputAssemblyStateCreateInfo{
-      {}, vk::PrimitiveTopology::eTriangleList, false};
-
-  auto viewport = vk::Viewport{
-      0.0f, 0.0f, static_cast<float>(width), static_cast<float>(height),
-      0.0f, 1.0f};
-
-  auto scissor = vk::Rect2D{{0, 0}, extent};
-
-  auto viewportState =
-      vk::PipelineViewportStateCreateInfo{{}, 1, &viewport, 1, &scissor};
-
-  auto rasterizer = vk::PipelineRasterizationStateCreateInfo{
-      {},
-      /*depthClamp*/ false,
-      /*rasterizeDiscard*/ false,
-      vk::PolygonMode::eFill,
-      {},
-      /*frontFace*/ vk::FrontFace::eClockwise,
-      {},
-      {},
-      {},
-      {},
-      1.0f};
-
-  auto multisampling = vk::PipelineMultisampleStateCreateInfo{
-      {}, vk::SampleCountFlagBits::e1, false, 1.0};
-
-  auto colorBlendAttachment = vk::PipelineColorBlendAttachmentState{
-      {},
-      /*srcCol*/ vk::BlendFactor::eOne,
-      /*dstCol*/ vk::BlendFactor::eZero,
-      /*colBlend*/ vk::BlendOp::eAdd,
-      /*srcAlpha*/ vk::BlendFactor::eOne,
-      /*dstAlpha*/ vk::BlendFactor::eZero,
-      /*alphaBlend*/ vk::BlendOp::eAdd,
-      vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG |
-          vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA};
-
-  auto colorBlending = vk::PipelineColorBlendStateCreateInfo{
-      {},
-      /*logicOpEnable=*/false,
-      vk::LogicOp::eCopy,
-      /*attachmentCount=*/1,
-      /*colourAttachments=*/&colorBlendAttachment};
-
-  pipelineLayout = device->createPipelineLayoutUnique({}, nullptr);
-
-  auto colorAttachment =
-      vk::AttachmentDescription{{},
-                                format1d,
-                                vk::SampleCountFlagBits::e1,
-                                vk::AttachmentLoadOp::eClear,
-                                vk::AttachmentStoreOp::eStore,
-                                {},
-                                {},
-                                {},
-                                vk::ImageLayout::eColorAttachmentOptimal};
-
-  auto colourAttachmentRef =
-      vk::AttachmentReference{0, vk::ImageLayout::eColorAttachmentOptimal};
-
-  auto subpass = vk::SubpassDescription{{},
-                                        vk::PipelineBindPoint::eGraphics,
-                                        /*inAttachmentCount*/ 0,
-                                        nullptr,
-                                        1,
-                                        &colourAttachmentRef};
-
-  std::array<vk::SubpassDependency, 1> subpassDependency = {
-      vk::SubpassDependency{VK_SUBPASS_EXTERNAL, 0,
-                            vk::PipelineStageFlagBits::eBottomOfPipe,
-                            vk::PipelineStageFlagBits::eColorAttachmentOutput,
-                            vk::AccessFlagBits::eMemoryRead,
-                            vk::AccessFlagBits::eColorAttachmentRead |
-                                vk::AccessFlagBits::eColorAttachmentWrite,
-                            vk::DependencyFlagBits::eByRegion},
-  };
-
-  renderPass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
-      {}, 1, &colorAttachment, 1, &subpass, 1, &subpassDependency[0]});
-
-  auto pipelineCreateInfo =
-      vk::GraphicsPipelineCreateInfo{{},
-                                     2,
-                                     pipelineShaderStages.data(),
-                                     &vertexInputInfo,
-                                     &inputAssembly,
-                                     nullptr,
-                                     &viewportState,
-                                     &rasterizer,
-                                     &multisampling,
-                                     nullptr,
-                                     &colorBlending,
-                                     nullptr,
-                                     *pipelineLayout,
-                                     *renderPass,
-                                     0};
-
-  pipeline = device->createGraphicsPipelineUnique({}, pipelineCreateInfo);
 
   commandPoolUnique = device->createCommandPoolUnique(
       {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
