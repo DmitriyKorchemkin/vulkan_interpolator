@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
   vulkan_interpolator::HeadlessInterpolator interpolator({device});
 
   std::mt19937 rng;
-  std::uniform_int_distribution<int> rwh(1000, 4000), rn(300, 400);
+  std::uniform_int_distribution<int> rwh(1000, 4000), rn(3000, 4000);
   std::uniform_real_distribution<float> runif(-1.f, 1.f);
 
   for (int h = 0; h < 4999; ++h) {
@@ -69,59 +69,67 @@ int main(int argc, char **argv) {
               }
     std::vector<double> misfits(cntD);
     std::vector<int> totals(cntD), totalsIn(cntD);
-
+#if 0
     tbb::parallel_for(tbb::blocked_range<int>(0, cntD), [&](const auto &range) {
       std::vector<float> data(width * height),
           data_golden(width * height, std::nan(""));
       for (int id = range.begin(); id != range.end(); ++id) {
-        data_golden.clear();
-        data_golden.resize(data.size(), std::nan(""));
-        const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
-                    dl = delta_values[id * 6 + 2],
-                    dr = delta_values[id * 6 + 3],
-                    sx = delta_values[id * 6 + 4],
-                    sy = delta_values[id * 6 + 5];
-        interpolator.interpolate(N, points.data(), values.data(),
-                                 tris.size() / 3, tris.data(), width, height,
-                                 width * sizeof(float), data.data(), dt, db, dl,
-                                 dr, sx, sy);
-        int total = 0, totalIn = 0;
-        double misfit = 0.;
-        for (size_t tri = 0; tri < tris.size(); tri += 3) {
-          Eigen::AlignedBox2d box2f;
-          Eigen::Matrix3d M;
-          Eigen::Vector3d b;
+#else
+    std::vector<float> data(width * height),
+        data_golden(width * height, std::nan(""));
+    for (int id = 0; id < cntD; ++id) {
+#endif
+    data_golden.clear();
+    data_golden.resize(data.size(), std::nan(""));
+    const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
+                dl = delta_values[id * 6 + 2], dr = delta_values[id * 6 + 3],
+                sx = delta_values[id * 6 + 4], sy = delta_values[id * 6 + 5];
+    auto ts_a = std::chrono::high_resolution_clock::now();
+    interpolator.interpolate(N, points.data(), values.data(), tris.size() / 3,
+                             tris.data(), width, height, width * sizeof(float),
+                             data.data(), dt, db, dl, dr, sx, sy);
+    auto ts_b = std::chrono::high_resolution_clock::now();
+    int total = 0, totalIn = 0;
+    double misfit = 0.;
+    for (size_t tri = 0; tri < tris.size(); tri += 3) {
+      Eigen::AlignedBox2d box2f;
+      Eigen::Matrix3d M;
+      Eigen::Vector3d b;
 
-          for (int iii = 0; iii < 3; ++iii) {
-            M.col(iii) = Eigen::Vector2d(points[tris[tri + iii] * 2],
-                                         points[tris[tri + iii] * 2 + 1])
-                             .homogeneous();
-            b[iii] = values[tris[tri + iii]];
-            box2f.extend(M.col(iii).template head<2>());
+      for (int iii = 0; iii < 3; ++iii) {
+        M.col(iii) = Eigen::Vector2d(points[tris[tri + iii] * 2],
+                                     points[tris[tri + iii] * 2 + 1])
+                         .homogeneous();
+        b[iii] = values[tris[tri + iii]];
+        box2f.extend(M.col(iii).template head<2>());
+      }
+
+      Eigen::Matrix3d Mi = M.inverse();
+
+      for (int y = std::max(0., std::floor(box2f.min().y()));
+           y <= std::min(height - 1.0, std::ceil(box2f.max().y())); ++y) {
+        for (int x = std::max(0., std::floor(box2f.min().x()));
+             x <= std::min(width - 1.0, std::ceil(box2f.max().x())); ++x) {
+          Eigen::Vector3d pt = Eigen::Vector2d(x, y).homogeneous();
+          Eigen::Vector3d gamma = Mi * pt;
+          if (gamma.array().maxCoeff() >= 1 || gamma.array().minCoeff() <= 0.) {
+            continue;
           }
-
-          Eigen::Matrix3d Mi = M.inverse();
-
-          for (int y = std::max(0., std::floor(box2f.min().y()));
-               y <= std::min(height - 1.0, std::ceil(box2f.max().y())); ++y) {
-            for (int x = std::max(0., std::floor(box2f.min().x()));
-                 x <= std::min(width - 1.0, std::ceil(box2f.max().x())); ++x) {
-              Eigen::Vector3d pt = Eigen::Vector2d(x, y).homogeneous();
-              Eigen::Vector3d gamma = Mi * pt;
-              if (gamma.array().maxCoeff() >= 1 ||
-                  gamma.array().minCoeff() <= 0.) {
-                continue;
-              }
-              totalIn++;
-              data_golden[y * width + x] = gamma.dot(b);
-              if (std::isnan(data[y * width + x]))
-                continue;
-              double diff = gamma.dot(b) - data[y * width + x];
-              misfit += diff * diff;
-              total++;
-            }
-          }
+          totalIn++;
+          data_golden[y * width + x] = gamma.dot(b);
+          if (std::isnan(data[y * width + x]))
+            continue;
+          double diff = gamma.dot(b) - data[y * width + x];
+          misfit += diff * diff;
+          total++;
         }
+      }
+    }
+    auto ts_c = std::chrono::high_resolution_clock::now();
+    std::cout << "GPU is "
+              << double((ts_c - ts_b).count()) / (ts_b - ts_a).count()
+              << "x faster" << std::endl;
+
 #if 0
         static std::mutex mutex;
         std::lock_guard lock(mutex);
@@ -149,30 +157,34 @@ int main(int argc, char **argv) {
         totals[id] = total;
         totalsIn[id] = totalIn;
       }
+#if 0
     });
-    for (int id = 0; id < cntD; ++id) {
-      const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
-                  dl = delta_values[id * 6 + 2], dr = delta_values[id * 6 + 3],
-                  sx = delta_values[id * 6 + 4], sy = delta_values[id * 6 + 5];
-      const double misfit = misfits[id];
-      if (minDelta > misfit) {
-        minDelta = misfit;
-        minDeltas[0] = sx;
-        minDeltas[1] = sy;
-        minDeltas[2] = dt;
-        minDeltas[3] = db;
-        minDeltas[4] = dl;
-        minDeltas[5] = dr;
+#endif
+      for (int id = 0; id < cntD; ++id) {
+        const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
+                    dl = delta_values[id * 6 + 2],
+                    dr = delta_values[id * 6 + 3],
+                    sx = delta_values[id * 6 + 4],
+                    sy = delta_values[id * 6 + 5];
+        const double misfit = misfits[id];
+        if (minDelta > misfit) {
+          minDelta = misfit;
+          minDeltas[0] = sx;
+          minDeltas[1] = sy;
+          minDeltas[2] = dt;
+          minDeltas[3] = db;
+          minDeltas[4] = dl;
+          minDeltas[5] = dr;
+        }
+        std::cout << sx << " " << sy << " " << dt << " " << db << " " << dl
+                  << " " << dr << " " << misfit << " @ " << totals[id] << "/"
+                  << totalsIn[id] << "px" << std::endl;
       }
-      std::cout << sx << " " << sy << " " << dt << " " << db << " " << dl << " "
-                << dr << " " << misfit << " @ " << totals[id] << "/"
-                << totalsIn[id] << "px" << std::endl;
-    }
 
-    std::cout << "Best deltas: " << minDeltas[0] << " " << minDeltas[1] << " "
-              << minDeltas[2] << " " << minDeltas[3] << " " << minDeltas[4]
-              << " " << minDeltas[5] << " @" << minDelta << std::endl;
-    std::cout << "==================" << std::endl;
+      std::cout << "Best deltas: " << minDeltas[0] << " " << minDeltas[1] << " "
+                << minDeltas[2] << " " << minDeltas[3] << " " << minDeltas[4]
+                << " " << minDeltas[5] << " @" << minDelta << std::endl;
+      std::cout << "==================" << std::endl;
   }
 #if 0
   std::ofstream out("out.bin", std::ios_base::binary);
