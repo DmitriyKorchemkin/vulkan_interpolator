@@ -1,24 +1,21 @@
-#ifndef VULKAN_INTERPOLATOR
-#define VULKAN_INTERPOLATOR
+#ifndef VULKAN_INTERPOLATOR_HEADLESS
+#define VULKAN_INTERPOLATOR_HEADLESS
 
 #include <mutex>
 #include <random>
 #include <vector>
 #include <vulkan/vulkan.hpp>
 
+#include "vulkan_interpolator/VulkanInterpolator.hpp"
+
 namespace vulkan_interpolator {
 
-struct InterpolationOptions {
-  int heightPreallocated = 1000;
-  int widthPreallocated = 1000;
-  int pointsPreallocated = 10000;
-  int indiciesPreallocated = 30000;
-};
 
 struct HeadlessInterpolator {
   HeadlessInterpolator(
       const std::vector<size_t> &devices,
-      const InterpolationOptions &opts = InterpolationOptions());
+      const InterpolationOptions &opts = InterpolationOptions(),
+      vk::Instance *sharedInstance = nullptr);
   ~HeadlessInterpolator();
   // Triangulate and rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
@@ -65,6 +62,7 @@ private:
   const vk::Format format1d = vk::Format::eR32Sfloat,
                    format2d = vk::Format::eR32G32Sfloat;
   vk::UniqueInstance instance;
+  vk::Instance *sharedInstance = nullptr;
   vk::UniqueDebugUtilsMessengerEXT messenger;
   vk::UniqueDevice device;
   vk::UniqueShaderModule vertexShaderModule, fragmentShaderModule;

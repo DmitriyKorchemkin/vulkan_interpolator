@@ -283,57 +283,51 @@ void HeadlessInterpolator::setupCopyImage() {
   imageInfo.mipLevels = 1;
   imageInfo.arrayLayers = 1;
   if (allocateImage()) {
-    {
-      std::cout << "Allocating image: " << heightAllocated << " x "
-                << widthAllocated << "  ->  " << height << " x " << width
-                << std::endl;
-      heightAllocated = std::max(heightAllocated, height);
-      widthAllocated = std::max(widthAllocated, width);
-      imageInfo.extent.width = widthAllocated;
-      imageInfo.extent.height = heightAllocated;
-      // color attachment
-      imageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment |
-                        vk::ImageUsageFlagBits::eTransferSrc;
-      image = device->createImageUnique(imageInfo);
+    std::cout << "Allocating image: " << heightAllocated << " x "
+              << widthAllocated << "  ->  " << height << " x " << width
+              << std::endl;
+    heightAllocated = std::max(heightAllocated, height);
+    widthAllocated = std::max(widthAllocated, width);
+    imageInfo.extent.width = widthAllocated;
+    imageInfo.extent.height = heightAllocated;
+    // color attachment
+    imageInfo.usage = vk::ImageUsageFlagBits::eColorAttachment |
+                      vk::ImageUsageFlagBits::eTransferSrc;
+    image = device->createImageUnique(imageInfo);
 
-      vk::MemoryRequirements reqs = device->getImageMemoryRequirements(*image);
-      vk::MemoryAllocateInfo outAllocInfo;
-      outAllocInfo.allocationSize = reqs.size;
-      outAllocInfo.memoryTypeIndex = findMemoryType(
-          reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
-      renderMem = device->allocateMemoryUnique(outAllocInfo);
-      device->bindImageMemory(*image, *renderMem, 0);
+    vk::MemoryRequirements reqs = device->getImageMemoryRequirements(*image);
+    vk::MemoryAllocateInfo outAllocInfo;
+    outAllocInfo.allocationSize = reqs.size;
+    outAllocInfo.memoryTypeIndex = findMemoryType(
+        reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal);
+    renderMem = device->allocateMemoryUnique(outAllocInfo);
+    device->bindImageMemory(*image, *renderMem, 0);
 
-      vk::ImageViewCreateInfo viewInfo;
-      viewInfo.viewType = vk::ImageViewType::e2D;
-      viewInfo.format = format1d;
-      viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
-      viewInfo.subresourceRange.baseMipLevel = 0;
-      viewInfo.subresourceRange.levelCount = 1;
-      viewInfo.subresourceRange.baseArrayLayer = 0;
-      viewInfo.subresourceRange.layerCount = 1;
-      viewInfo.image = *image;
-      imageView = device->createImageViewUnique(viewInfo);
-      // TODO: should we create framebuffer if width*height < allocated ?! Or
-      // "extent+scissors" thingies are just enough?!
-    }
-    {
-      // copy dst
-      imageInfo.initialLayout = vk::ImageLayout::eUndefined;
-      imageInfo.tiling = vk::ImageTiling::eLinear;
-      imageInfo.usage = vk::ImageUsageFlagBits::eTransferDst;
+    vk::ImageViewCreateInfo viewInfo;
+    viewInfo.viewType = vk::ImageViewType::e2D;
+    viewInfo.format = format1d;
+    viewInfo.subresourceRange.aspectMask = vk::ImageAspectFlagBits::eColor;
+    viewInfo.subresourceRange.baseMipLevel = 0;
+    viewInfo.subresourceRange.levelCount = 1;
+    viewInfo.subresourceRange.baseArrayLayer = 0;
+    viewInfo.subresourceRange.layerCount = 1;
+    viewInfo.image = *image;
+    imageView = device->createImageViewUnique(viewInfo);
+    // TODO: should we create framebuffer if width*height < allocated ?! Or
+    // "extent+scissors" thingies are just enough?!
+    // copy dst
+    imageInfo.initialLayout = vk::ImageLayout::eUndefined;
+    imageInfo.tiling = vk::ImageTiling::eLinear;
+    imageInfo.usage = vk::ImageUsageFlagBits::eTransferDst;
 
-      outputImage = device->createImageUnique(imageInfo);
-      vk::MemoryRequirements reqs =
-          device->getImageMemoryRequirements(*outputImage);
-      vk::MemoryAllocateInfo outAllocInfo;
-      outAllocInfo.allocationSize = reqs.size;
-      outAllocInfo.memoryTypeIndex = findMemoryType(
-          reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
-                                   vk::MemoryPropertyFlagBits::eHostCoherent);
-      outputMem = device->allocateMemoryUnique(outAllocInfo);
-      device->bindImageMemory(*outputImage, *outputMem, 0);
-    }
+    outputImage = device->createImageUnique(imageInfo);
+    reqs = device->getImageMemoryRequirements(*outputImage);
+    outAllocInfo.allocationSize = reqs.size;
+    outAllocInfo.memoryTypeIndex = findMemoryType(
+        reqs.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible |
+                                 vk::MemoryPropertyFlagBits::eHostCoherent);
+    outputMem = device->allocateMemoryUnique(outAllocInfo);
+    device->bindImageMemory(*outputImage, *outputMem, 0);
   }
 
   if (width == widthLast && height == heightLast)
@@ -563,14 +557,14 @@ HeadlessInterpolator::~HeadlessInterpolator() {
 
 HeadlessInterpolator::HeadlessInterpolator(
     const std::vector<size_t> &allowed_devices,
-    const InterpolationOptions &opts) {
+    const InterpolationOptions &opts, vk::Instance *sharedInstance_) {
   std::cout << "Vertex shader: (" << shaders::shader_vert_spv.size()
             << " bytes)" << kernel2string(shaders::shader_vert_spv)
             << std::endl;
   std::cout << "Fragment shader: (" << shaders::shader_frag_spv.size()
             << " bytes)" << kernel2string(shaders::shader_frag_spv)
             << std::endl;
-  vk::ApplicationInfo appInfo("Hello Triangle", VK_MAKE_VERSION(1, 0, 0),
+  vk::ApplicationInfo appInfo("vulkan_interpolator", VK_MAKE_VERSION(1, 0, 0),
                               "No Engine", VK_MAKE_VERSION(1, 0, 0),
                               VK_API_VERSION_1_0);
 
@@ -589,17 +583,17 @@ HeadlessInterpolator::HeadlessInterpolator(
   points = opts.pointsPreallocated;
   indicies = opts.indiciesPreallocated;
 
-  instance = vk::createInstanceUnique(
-      vk::InstanceCreateInfo{{},
-                             &appInfo,
-                             static_cast<uint32_t>(layers.size()),
-                             layers.data(),
-                             static_cast<uint32_t>(glfwExtensionsVector.size()),
-                             glfwExtensionsVector.data()});
-  auto physicalDevices = instance->enumeratePhysicalDevices();
-  std::cout << "#Devices = " << physicalDevices.size() << std::endl;
-
-  physicalDevice = physicalDevices[allowed_devices[0]];
+  if (sharedInstance_) {
+    sharedInstance = sharedInstance_;
+  } else {
+    instance = vk::createInstanceUnique(vk::InstanceCreateInfo{
+        {},
+        &appInfo,
+        static_cast<uint32_t>(layers.size()),
+        layers.data(),
+        static_cast<uint32_t>(glfwExtensionsVector.size()),
+        glfwExtensionsVector.data()});
+    sharedInstance = &*instance;
 #ifdef DEBUG
   loadDebugUtilsCommands(*instance);
 
@@ -616,6 +610,11 @@ HeadlessInterpolator::HeadlessInterpolator(
           debugCallback},
       nullptr);
 #endif
+  }
+  auto physicalDevices = sharedInstance->enumeratePhysicalDevices();
+  std::cout << "#Devices = " << physicalDevices.size() << std::endl;
+
+  physicalDevice = physicalDevices[allowed_devices[0]];
   auto queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
   size_t graphicsQueueFamilyIndex = std::distance(
@@ -654,11 +653,6 @@ HeadlessInterpolator::HeadlessInterpolator(
   commandPoolUnique = device->createCommandPoolUnique(
       {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
        static_cast<uint32_t>(graphicsQueueFamilyIndex)});
-#if 0
-  createVertexBuffer();
-  createIndexBuffer();
-  createStagingBuffer();
-#endif
 
   auto bar = device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
       *commandPoolUnique, vk::CommandBufferLevel::ePrimary, 3));

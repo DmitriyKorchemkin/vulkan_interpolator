@@ -1,3 +1,4 @@
+#include <vulkan_interpolator/VulkanInterpolator.hpp>
 #include <vulkan_interpolator/VulkanInterpolatorHeadless.hpp>
 
 #include <Eigen/Dense>
@@ -18,7 +19,8 @@ int main(int argc, char **argv) {
   size_t device = 0;
   if (argc == 2)
     device = std::atoi(argv[1]) % 4;
-  vulkan_interpolator::HeadlessInterpolator interpolator({device});
+  vulkan_interpolator::Interpolator interpolator;
+  (void)device;
 
   std::mt19937 rng;
   std::uniform_int_distribution<int> rwh(1000, 4000), rn(30000, 40000);
@@ -69,7 +71,7 @@ int main(int argc, char **argv) {
               }
     std::vector<double> misfits(cntD);
     std::vector<int> totals(cntD), totalsIn(cntD);
-#if 0
+#if 1
     tbb::parallel_for(tbb::blocked_range<int>(0, cntD), [&](const auto &range) {
       std::vector<float> data(width * height),
           data_golden(width * height, std::nan(""));
@@ -157,7 +159,7 @@ int main(int argc, char **argv) {
     totals[id] = total;
     totalsIn[id] = totalIn;
   }
-#if 0
+#if 1
     });
 #endif
   for (int id = 0; id < cntD; ++id) {

@@ -1,70 +1,49 @@
 #ifndef VULKAN_INTERPOLATOR
 #define VULKAN_INTERPOLATOR
 
-#include <random>
+#include <condition_variable>
+#include <memory>
+#include <mutex>
 #include <vector>
-#include <vulkan/vulkan.hpp>
-#define GLFW_INCLUDE_VULKAN
-#include <GLFW/glfw3.h>
 
 namespace vulkan_interpolator {
 
-struct Interpolator {
-  static const uint32_t width = 1536;
-  static const uint32_t height = 1536;
-  GLFWwindow *window;
-  vk::UniqueInstance instance;
-  vk::UniqueDebugUtilsMessengerEXT messenger;
-  vk::UniqueSurfaceKHR surface;
-  vk::UniqueDevice device;
-  vk::UniqueSwapchainKHR swapChain;
-  std::vector<vk::UniqueImageView> imageViews;
-  vk::UniqueShaderModule vertexShaderModule, fragmentShaderModule;
-  vk::UniquePipelineLayout pipelineLayout;
-  vk::UniqueSemaphore imageAvailableSemaphore, renderFinishedSemaphore;
-  vk::UniqueRenderPass renderPass;
-  vk::UniquePipeline pipeline;
-  std::vector<vk::UniqueFramebuffer> framebuffers;
-  vk::UniqueCommandPool commandPoolUnique;
-  vk::Queue presentQueue, deviceQueue;
-  std::vector<vk::UniqueCommandBuffer> commandBuffers;
-  vk::UniqueCommandBuffer copyBuffer, copyBackBuffer;
-  vk::PhysicalDevice physicalDevice;
-  using BufferMem = std::pair<vk::UniqueBuffer, vk::UniqueDeviceMemory>;
-  BufferMem vertexBuffer, indexBuffer, stagingBuffer;
-  void *stagingData;
-  vk::UniqueImage outputImage;
-  vk::UniqueDeviceMemory outputMem;
+struct HeadlessInterpolator;
+struct InterpolationOptions {
+  int heightPreallocated = 1000;
+  int widthPreallocated = 1000;
+  int pointsPreallocated = 10000;
+  int indiciesPreallocated = 30000;
+};
 
-  Interpolator(const std::vector<size_t> &devices);
-  ~Interpolator();
-  void run();
+struct Interpolator {
+  // Note: if devices is empty -- all available devices are being used
+  Interpolator(const size_t interpolatorsPerDevice = 8,
+               const std::vector<size_t> &devices = {},
+               const InterpolationOptions &options = InterpolationOptions());
+  // Mimicks HeadlessInterpolator (and, effectively, hides all vulkan-related
+  // stuff) Triangulate and rasterize
+  void interpolate(const int nPoints, const float *points, const float *values,
+                   const int width, const int height, const int stride_bytes,
+                   float *output, float dt, float db, float dl, float dr,
+                   float sx, float sy);
+  // Just rasterize
+  void interpolate(const int nPoints, const float *points, const float *values,
+                   const int nTriangles, const int *indicies, const int width,
+                   const int height, const int stride_bytes, float *output,
+                   float dt, float db, float dl, float dr, float sx, float sy);
+
+  // Compute delaunay triangulation
+  static void PrepareInterpolation(const int nPoints, const float *points,
+                                   std::vector<int> &indicies);
+  // Gets number of vulkan devices
+  static size_t GetDeviceNumber();
 
 private:
-  const int N_PTS = 10000;
-  const int PTS_SIZE = 6 * N_PTS * sizeof(float);
-  int nTris = 0;
-  const size_t IDX_MAX_CNT = 30 * N_PTS;
-  const size_t IDX_MAX_SIZE = IDX_MAX_CNT * sizeof(uint32_t);
-
-  std::vector<float> points;
-  std::vector<int> indicies;
-  std::mt19937 rng;
-
-  void createPoints();
-
-  BufferMem createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
-                         const vk::MemoryPropertyFlags &flags);
-  void createVertexBuffer();
-  void createIndexBuffer();
-  void createStagingBuffer();
-  void stageData();
-
-  uint32_t findMemoryType(uint32_t mask,
-                          const vk::MemoryPropertyFlags &properties);
-
-  std::vector<const char *> required_extensions = {
-      VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+  std::mutex mutex;
+  std::condition_variable interpolatorAvailable;
+  std::vector<HeadlessInterpolator *> freeInterpolators;
+  std::vector<std::unique_ptr<HeadlessInterpolator>> interpolators;
 };
 
 } // namespace vulkan_interpolator
