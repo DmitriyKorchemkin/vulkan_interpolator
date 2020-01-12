@@ -17,15 +17,16 @@ struct InterpolationOptions {
 
 struct HeadlessInterpolator {
   HeadlessInterpolator(
-      const std::vector<size_t>& devices,
-      const InterpolationOptions& opts = InterpolationOptions());
+      const std::vector<size_t> &devices,
+      const InterpolationOptions &opts = InterpolationOptions());
   ~HeadlessInterpolator();
   void run();
 
   // Triangulate and rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int width, const int height, const int stride_bytes,
-                   float *output, float dt, float db, float dl, float dr, float sx, float sy);
+                   float *output, float dt, float db, float dl, float dr,
+                   float sx, float sy);
   // Just rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int nTriangles, const int *indicies, const int width,
@@ -33,10 +34,10 @@ struct HeadlessInterpolator {
                    float dt, float db, float dl, float dr, float sx, float sy);
 
   // Compute delaunay triangulation
-  static void PrepareInterpolation(const int nPoints, const float* points,
-                                   std::vector<int>& indicies);
+  static void PrepareInterpolation(const int nPoints, const float *points,
+                                   std::vector<int> &indicies);
 
- private:
+private:
   std::mutex mutex;
   // allocate new vertex data buffer if needed
   bool allocatePoints();
@@ -54,14 +55,14 @@ struct HeadlessInterpolator {
   void rasterize();
 
   uint32_t heightAllocated = 0, widthAllocated = 0, pointsAllocated = 0,
-           indiciesAllocated = 0, widthLast=-1, heightLast=-1;
+           indiciesAllocated = 0, widthLast = -1, heightLast = -1;
   size_t stagingAllocated = 0;
 
   uint32_t height, width, points, indicies;
   // points into staging buffer
-  float* points_ptr;
+  float *points_ptr;
   // points into staging buffer
-  int32_t* indicies_ptr;
+  int32_t *indicies_ptr;
 
   const vk::Format format1d = vk::Format::eR32Sfloat,
                    format2d = vk::Format::eR32G32Sfloat;
@@ -83,17 +84,17 @@ struct HeadlessInterpolator {
   vk::UniqueImage image;
   vk::UniqueImageView imageView;
   vk::UniqueImage outputImage;
-  void* stagingData;
+  void *stagingData;
   vk::UniqueFence fence;
   vk::ClearValue clearValues;
 
-  BufferMem createBuffer(size_t sz, const vk::BufferUsageFlags& usage,
-                         const vk::MemoryPropertyFlags& flags);
+  BufferMem createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
+                         const vk::MemoryPropertyFlags &flags);
 
   uint32_t findMemoryType(uint32_t mask,
-                          const vk::MemoryPropertyFlags& properties);
+                          const vk::MemoryPropertyFlags &properties);
 };
 
-}  // namespace vulkan_interpolator
+} // namespace vulkan_interpolator
 
 #endif

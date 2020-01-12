@@ -44,25 +44,25 @@ void loadDebugUtilsCommands(VkInstance instance) {
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkCreateDebugUtilsMessengerEXT";  // check shouldn't
-                                                            // be necessary
-                                                            // (based on spec)
+    throw "Failed to load vkCreateDebugUtilsMessengerEXT"; // check shouldn't
+                                                           // be necessary
+                                                           // (based on spec)
   CreateDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkDestroyDebugUtilsMessengerEXT";  // check shouldn't
-                                                             // be necessary
-                                                             // (based on spec)
+    throw "Failed to load vkDestroyDebugUtilsMessengerEXT"; // check shouldn't
+                                                            // be necessary
+                                                            // (based on spec)
   DestroyDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT");
   if (!temp_fp)
-    throw "Failed to load vkSubmitDebugUtilsMessageEXT";  // check shouldn't be
-                                                          // necessary (based on
-                                                          // spec)
+    throw "Failed to load vkSubmitDebugUtilsMessageEXT"; // check shouldn't be
+                                                         // necessary (based on
+                                                         // spec)
   SubmitDebugUtilsMessageEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkSubmitDebugUtilsMessageEXT>(temp_fp);
 }
@@ -103,7 +103,7 @@ auto kernel2string(const std::string_view &view) {
   return kernel.str();
 }
 
-}  // namespace
+} // namespace
 
 namespace vulkan_interpolator {
 
@@ -127,16 +127,15 @@ void HeadlessInterpolator::PrepareInterpolation(const int nPoints,
   delaunator::Delaunator d(pts);
   indicies.clear();
   indicies.reserve(d.triangles.size());
-  for (auto &id : d.triangles) indicies.emplace_back(id);
+  for (auto &id : d.triangles)
+    indicies.emplace_back(id);
 }
 
-void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
-                                       const float *values,
-                                       const int nTriangles,
-                                       const int *indicies_, const int width_,
-                                       const int height_,
-                                       const int stride_bytes, float *output,
-                                       float dt, float db, float dl, float dr, float sx, float sy) {
+void HeadlessInterpolator::interpolate(
+    const int nPoints, const float *points_, const float *values,
+    const int nTriangles, const int *indicies_, const int width_,
+    const int height_, const int stride_bytes, float *output, float dt,
+    float db, float dl, float dr, float sx, float sy) {
   std::lock_guard<std::mutex> lock(mutex);
   points = nPoints;
   height = height_;
@@ -503,8 +502,8 @@ void HeadlessInterpolator::setupCopyImage() {
 
   renderPass = device->createRenderPassUnique(vk::RenderPassCreateInfo{
       {}, 1, &colorAttachment, 1, &subpass, 1, &subpassDependency[0]});
-    framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
-        {}, *renderPass, 1, &(*imageView), widthAllocated, heightAllocated, 1});
+  framebuffer = device->createFramebufferUnique(vk::FramebufferCreateInfo{
+      {}, *renderPass, 1, &(*imageView), widthAllocated, heightAllocated, 1});
 
   auto pipelineCreateInfo =
       vk::GraphicsPipelineCreateInfo{{},
@@ -537,9 +536,9 @@ uint32_t HeadlessInterpolator::findMemoryType(
   throw std::runtime_error("Incompatible memory type");
 }
 
-HeadlessInterpolator::BufferMem HeadlessInterpolator::createBuffer(
-    size_t sz, const vk::BufferUsageFlags &usage,
-    const vk::MemoryPropertyFlags &flags) {
+HeadlessInterpolator::BufferMem
+HeadlessInterpolator::createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
+                                   const vk::MemoryPropertyFlags &flags) {
   vk::BufferCreateInfo bufferInfo;
   bufferInfo.size = sz;
   bufferInfo.usage = usage;
@@ -652,7 +651,6 @@ HeadlessInterpolator::HeadlessInterpolator(
       reinterpret_cast<const uint32_t *>(shaders::shader_frag_spv.data())};
   fragmentShaderModule = device->createShaderModuleUnique(fragShaderCreateInfo);
 
-
   commandPoolUnique = device->createCommandPoolUnique(
       {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
        static_cast<uint32_t>(graphicsQueueFamilyIndex)});
@@ -670,7 +668,8 @@ HeadlessInterpolator::HeadlessInterpolator(
 
   deviceQueue = device->getQueue(graphicsQueueFamilyIndex, 0);
 
-  for (int i = 0; i < 4; ++i) clearValues.color.float32[i] = std::nan("");
+  for (int i = 0; i < 4; ++i)
+    clearValues.color.float32[i] = std::nan("");
 
   vk::FenceCreateInfo info;
   fence = device->createFenceUnique(info);
@@ -693,4 +692,4 @@ void HeadlessInterpolator::rasterize() {
   device->waitForFences(1, &*fence, true, std::numeric_limits<uint64_t>::max());
 }
 
-}  // namespace vulkan_interpolator
+} // namespace vulkan_interpolator

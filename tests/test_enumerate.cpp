@@ -9,20 +9,22 @@
 int main(int argc, char **argv) {
   if (argc > 2) {
     std::cout << "Unrecognized options: ";
-    for (int i = 1; i < argc; ++i) std::cout << argv[i] << " ";
+    for (int i = 1; i < argc; ++i)
+      std::cout << argv[i] << " ";
     std::cout << std::endl;
     return -1;
   }
 
   size_t device = 0;
-  if (argc == 2) device = std::atoi(argv[1]) % 4;
+  if (argc == 2)
+    device = std::atoi(argv[1]) % 4;
   vulkan_interpolator::HeadlessInterpolator interpolator({device});
 
   std::mt19937 rng;
-  std::uniform_int_distribution<int> rwh(1000, 2000), rn(3, 4);
+  std::uniform_int_distribution<int> rwh(1000, 4000), rn(300, 400);
   std::uniform_real_distribution<float> runif(-1.f, 1.f);
 
-  for (int h = 0; h < 4; ++h) {
+  for (int h = 0; h < 4999; ++h) {
     const int N = rn(rng);
 
     int width = rwh(rng);
@@ -45,7 +47,9 @@ int main(int argc, char **argv) {
 
     std::vector<float> delta_values;
     float signs[] = {1.f};
-    float deltas[] = {-1.f, 0.5f, 0.f, 0.5f, 1.f};//0.f};  // {-1.5f, -1.f, -.5f, 0.f, .5f, 1.f, 1.5f};
+    float deltas[] = {
+        -1.f, -0.5f, 0.f, 0.5f,
+        1.f}; // 0.f};  // {-1.5f, -1.f, -.5f, 0.f, .5f, 1.f, 1.5f};
     float minDeltas[6];
     float minDelta = 1e100;
     int cntD = 0;
@@ -77,38 +81,48 @@ int main(int argc, char **argv) {
                     dr = delta_values[id * 6 + 3],
                     sx = delta_values[id * 6 + 4],
                     sy = delta_values[id * 6 + 5];
-        interpolator.interpolate(N, points.data(), values.data(), width, height,
+        interpolator.interpolate(N, points.data(), values.data(),
+                                 tris.size() / 3, tris.data(), width, height,
                                  width * sizeof(float), data.data(), dt, db, dl,
                                  dr, sx, sy);
         int total = 0, totalIn = 0;
         double misfit = 0.;
-        for (int y = 0; y < height; ++y) {
-          for (int x = 0; x < width; ++x) {
-            Eigen::Vector3d pt = Eigen::Vector2d(x, y).homogeneous();
-            for (size_t tri = 0; tri < tris.size(); tri += 3) {
-              Eigen::Matrix3d M;
-              Eigen::Vector3d b;
-              for (int iii = 0; iii < 3; ++iii) {
-                M.col(iii) = Eigen::Vector2d(points[tris[tri + iii] * 2],
-                                             points[tris[tri + iii] * 2 + 1])
-                                 .homogeneous();
-                b[iii] = values[tris[tri + iii]];
-              }
-              //      Eigen::Vector3d c = M.lu().solve(b);
-              Eigen::Vector3d gamma = M.lu().solve(pt);
+        for (size_t tri = 0; tri < tris.size(); tri += 3) {
+          Eigen::AlignedBox2d box2f;
+          Eigen::Matrix3d M;
+          Eigen::Vector3d b;
+
+          for (int iii = 0; iii < 3; ++iii) {
+            M.col(iii) = Eigen::Vector2d(points[tris[tri + iii] * 2],
+                                         points[tris[tri + iii] * 2 + 1])
+                             .homogeneous();
+            b[iii] = values[tris[tri + iii]];
+            box2f.extend(M.col(iii).template head<2>());
+          }
+
+          Eigen::Matrix3d Mi = M.inverse();
+
+          for (int y = std::max(0., std::floor(box2f.min().y()));
+               y <= std::min(height - 1.0, std::ceil(box2f.max().y())); ++y) {
+            for (int x = std::max(0., std::floor(box2f.min().x()));
+                 x <= std::min(width - 1.0, std::ceil(box2f.max().x())); ++x) {
+              Eigen::Vector3d pt = Eigen::Vector2d(x, y).homogeneous();
+              Eigen::Vector3d gamma = Mi * pt;
               if (gamma.array().maxCoeff() >= 1 ||
                   gamma.array().minCoeff() <= 0.) {
                 continue;
               }
               totalIn++;
               data_golden[y * width + x] = gamma.dot(b);
-              if (std::isnan(data[y * width + x])) continue;
+              if (std::isnan(data[y * width + x]))
+                continue;
               double diff = gamma.dot(b) - data[y * width + x];
               misfit += diff * diff;
               total++;
             }
           }
         }
+#if 0
         static std::mutex mutex;
         std::lock_guard lock(mutex);
         std::ofstream of("out.m", std::ios_base::app);
@@ -128,6 +142,7 @@ int main(int argc, char **argv) {
           }
         }
         of << ";\n";
+#endif
         std::cout << '#' << std::flush;
         misfit = std::sqrt(misfit / total);
         misfits[id] = misfit;
