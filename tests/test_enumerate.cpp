@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
   vulkan_interpolator::HeadlessInterpolator interpolator({device});
 
   std::mt19937 rng;
-  std::uniform_int_distribution<int> rwh(1000, 4000), rn(3000, 4000);
+  std::uniform_int_distribution<int> rwh(1000, 4000), rn(30000, 40000);
   std::uniform_real_distribution<float> runif(-1.f, 1.f);
 
   for (int h = 0; h < 4999; ++h) {
@@ -151,44 +151,42 @@ int main(int argc, char **argv) {
         }
         of << ";\n";
 #endif
-        std::cout << '#' << std::flush;
-        misfit = std::sqrt(misfit / total);
-        misfits[id] = misfit;
-        totals[id] = total;
-        totalsIn[id] = totalIn;
-      }
+    std::cout << '#' << std::flush;
+    misfit = std::sqrt(misfit / total);
+    misfits[id] = misfit;
+    totals[id] = total;
+    totalsIn[id] = totalIn;
+  }
 #if 0
     });
 #endif
-      for (int id = 0; id < cntD; ++id) {
-        const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
-                    dl = delta_values[id * 6 + 2],
-                    dr = delta_values[id * 6 + 3],
-                    sx = delta_values[id * 6 + 4],
-                    sy = delta_values[id * 6 + 5];
-        const double misfit = misfits[id];
-        if (minDelta > misfit) {
-          minDelta = misfit;
-          minDeltas[0] = sx;
-          minDeltas[1] = sy;
-          minDeltas[2] = dt;
-          minDeltas[3] = db;
-          minDeltas[4] = dl;
-          minDeltas[5] = dr;
-        }
-        std::cout << sx << " " << sy << " " << dt << " " << db << " " << dl
-                  << " " << dr << " " << misfit << " @ " << totals[id] << "/"
-                  << totalsIn[id] << "px" << std::endl;
-      }
-
-      std::cout << "Best deltas: " << minDeltas[0] << " " << minDeltas[1] << " "
-                << minDeltas[2] << " " << minDeltas[3] << " " << minDeltas[4]
-                << " " << minDeltas[5] << " @" << minDelta << std::endl;
-      std::cout << "==================" << std::endl;
+  for (int id = 0; id < cntD; ++id) {
+    const float dt = delta_values[id * 6], db = delta_values[id * 6 + 1],
+                dl = delta_values[id * 6 + 2], dr = delta_values[id * 6 + 3],
+                sx = delta_values[id * 6 + 4], sy = delta_values[id * 6 + 5];
+    const double misfit = misfits[id];
+    if (minDelta > misfit) {
+      minDelta = misfit;
+      minDeltas[0] = sx;
+      minDeltas[1] = sy;
+      minDeltas[2] = dt;
+      minDeltas[3] = db;
+      minDeltas[4] = dl;
+      minDeltas[5] = dr;
+    }
+    std::cout << sx << " " << sy << " " << dt << " " << db << " " << dl << " "
+              << dr << " " << misfit << " @ " << totals[id] << "/"
+              << totalsIn[id] << "px" << std::endl;
   }
+
+  std::cout << "Best deltas: " << minDeltas[0] << " " << minDeltas[1] << " "
+            << minDeltas[2] << " " << minDeltas[3] << " " << minDeltas[4] << " "
+            << minDeltas[5] << " @" << minDelta << std::endl;
+  std::cout << "==================" << std::endl;
+}
 #if 0
   std::ofstream out("out.bin", std::ios_base::binary);
   out.write(reinterpret_cast<char *>(data.data()), data.size() * sizeof(float));
 #endif
-  return 0;
+return 0;
 }

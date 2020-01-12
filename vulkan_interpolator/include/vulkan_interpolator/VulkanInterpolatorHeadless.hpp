@@ -20,8 +20,6 @@ struct HeadlessInterpolator {
       const std::vector<size_t> &devices,
       const InterpolationOptions &opts = InterpolationOptions());
   ~HeadlessInterpolator();
-  void run();
-
   // Triangulate and rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int width, const int height, const int stride_bytes,

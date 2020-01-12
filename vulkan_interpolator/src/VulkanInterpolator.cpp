@@ -48,25 +48,25 @@ void loadDebugUtilsCommands(VkInstance instance) {
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkCreateDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkCreateDebugUtilsMessengerEXT";  // check shouldn't
-                                                            // be necessary
-                                                            // (based on spec)
+    throw "Failed to load vkCreateDebugUtilsMessengerEXT"; // check shouldn't
+                                                           // be necessary
+                                                           // (based on spec)
   CreateDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkCreateDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkDestroyDebugUtilsMessengerEXT");
   if (!temp_fp)
-    throw "Failed to load vkDestroyDebugUtilsMessengerEXT";  // check shouldn't
-                                                             // be necessary
-                                                             // (based on spec)
+    throw "Failed to load vkDestroyDebugUtilsMessengerEXT"; // check shouldn't
+                                                            // be necessary
+                                                            // (based on spec)
   DestroyDebugUtilsMessengerEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkDestroyDebugUtilsMessengerEXT>(temp_fp);
 
   temp_fp = vkGetInstanceProcAddr(instance, "vkSubmitDebugUtilsMessageEXT");
   if (!temp_fp)
-    throw "Failed to load vkSubmitDebugUtilsMessageEXT";  // check shouldn't be
-                                                          // necessary (based on
-                                                          // spec)
+    throw "Failed to load vkSubmitDebugUtilsMessageEXT"; // check shouldn't be
+                                                         // necessary (based on
+                                                         // spec)
   SubmitDebugUtilsMessageEXTDispatchTable[instance] =
       reinterpret_cast<PFN_vkSubmitDebugUtilsMessageEXT>(temp_fp);
 }
@@ -122,7 +122,7 @@ void Interpolator::createPoints() {
   std::vector<double> coords;
   for (auto &p : points) {
 
-    p = (idx % 6) < 3 ?((idx % 6) < 2 ? u11(rng) : 1.f)  : u01(rng);
+    p = (idx % 6) < 3 ? ((idx % 6) < 2 ? u11(rng) : 1.f) : u01(rng);
     if (idx % 6 == 1) {
       coords.push_back(points[idx - 1]);
       coords.push_back(points[idx]);
@@ -140,35 +140,33 @@ void Interpolator::createPoints() {
   nTris = d.triangles.size() / 3;
   std::cout << "Triangles: " << nTris << std::endl;
 
-
-
   indicies.resize(nTris * 3);
   for (int i = 0; i < nTris; ++i) {
-    for (int j = 0; j <3; ++j) {
-    indicies[i*3+j]= d.triangles[i*3+j];
-
+    for (int j = 0; j < 3; ++j) {
+      indicies[i * 3 + j] = d.triangles[i * 3 + j];
     }
-    double x0 = points[indicies[3*i]*6];
-    double y0 = points[indicies[3*i]*6+1];
-    double x1 = points[indicies[3*i+1]*6];
-    double y1 = points[indicies[3*i+1]*6+1];
-    double x2 = points[indicies[3*i+2]*6];
-    double y2 = points[indicies[3*i+2]*6+1];
+    double x0 = points[indicies[3 * i] * 6];
+    double y0 = points[indicies[3 * i] * 6 + 1];
+    double x1 = points[indicies[3 * i + 1] * 6];
+    double y1 = points[indicies[3 * i + 1] * 6 + 1];
+    double x2 = points[indicies[3 * i + 2] * 6];
+    double y2 = points[indicies[3 * i + 2] * 6 + 1];
     double dx1 = x1 - x0;
     double dy1 = y1 - y0;
     double dx2 = x2 - x0;
     double dy2 = y2 - y0;
-    double det = dx1*dy2-dx2*dy1;
+    double det = dx1 * dy2 - dx2 * dy1;
     if (det > 0)
-      std::swap(indicies[3*i], indicies[3*i+1]);
-//    std::cout << indicies[i] << ' ';
+      std::swap(indicies[3 * i], indicies[3 * i + 1]);
+    //    std::cout << indicies[i] << ' ';
   }
   stageData();
   auto dstop = std::chrono::high_resolution_clock::now();
   std::cout << "D: " << (1e9 / (dstop - dstart).count()) << std::endl;
 }
-uint32_t Interpolator::findMemoryType(
-    uint32_t mask, const vk::MemoryPropertyFlags &properties) {
+uint32_t
+Interpolator::findMemoryType(uint32_t mask,
+                             const vk::MemoryPropertyFlags &properties) {
   auto props = physicalDevice.getMemoryProperties();
   for (uint32_t i = 0; i < props.memoryTypeCount; ++i) {
     if ((mask & (1 << i)) &&
@@ -177,9 +175,9 @@ uint32_t Interpolator::findMemoryType(
   }
   throw std::runtime_error("Incompatible memory type");
 }
-Interpolator::BufferMem Interpolator::createBuffer(
-    size_t sz, const vk::BufferUsageFlags &usage,
-    const vk::MemoryPropertyFlags &flags) {
+Interpolator::BufferMem
+Interpolator::createBuffer(size_t sz, const vk::BufferUsageFlags &usage,
+                           const vk::MemoryPropertyFlags &flags) {
   vk::BufferCreateInfo bufferInfo;
   bufferInfo.size = sz;
   bufferInfo.usage = usage;
@@ -202,44 +200,37 @@ void Interpolator::createStagingBuffer() {
   stagingBuffer = createBuffer(size, vk::BufferUsageFlagBits::eTransferSrc,
                                vk::MemoryPropertyFlagBits::eHostVisible |
                                    vk::MemoryPropertyFlagBits::eHostCoherent);
-//  device->mapMemory(*stagingBuffer.second, 0, size, vk::MemoryMapFlags{},
-//                    &stagingData);
-
+  //  device->mapMemory(*stagingBuffer.second, 0, size, vk::MemoryMapFlags{},
+  //                    &stagingData);
 
   vk::CommandBufferAllocateInfo allocInfo;
   allocInfo.level = vk::CommandBufferLevel::ePrimary;
   allocInfo.commandPool = *commandPoolUnique;
   allocInfo.commandBufferCount = 1;
 
-  auto foo  = device->allocateCommandBuffersUnique(allocInfo);
+  auto foo = device->allocateCommandBuffersUnique(allocInfo);
   copyBuffer = std::move(foo[0]);
 
-  
   vk::CommandBufferBeginInfo cbegin{};
   copyBuffer->begin(&cbegin);
-    vk::BufferCopy regions[2];
-    regions[1].srcOffset = PTS_SIZE;
-    regions[0].srcOffset = 0;
-    regions[0].dstOffset = regions[1].dstOffset = 0;
-    regions[0].size = PTS_SIZE;
-    regions[1].size = IDX_MAX_SIZE;
-    copyBuffer->copyBuffer(*stagingBuffer.first, *vertexBuffer.first, 1, regions);
-    copyBuffer->copyBuffer(*stagingBuffer.first, *indexBuffer.first, 1, regions+1);
-    copyBuffer->end();
-  
-
+  vk::BufferCopy regions[2];
+  regions[1].srcOffset = PTS_SIZE;
+  regions[0].srcOffset = 0;
+  regions[0].dstOffset = regions[1].dstOffset = 0;
+  regions[0].size = PTS_SIZE;
+  regions[1].size = IDX_MAX_SIZE;
+  copyBuffer->copyBuffer(*stagingBuffer.first, *vertexBuffer.first, 1, regions);
+  copyBuffer->copyBuffer(*stagingBuffer.first, *indexBuffer.first, 1,
+                         regions + 1);
+  copyBuffer->end();
 }
 
 void Interpolator::stageData() {
   int IDX_SIZE = nTris * 3 * sizeof(int);
-  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE+IDX_MAX_SIZE, vk::MemoryMapFlags{},
-                    &stagingData);
-  {
-  memcpy(stagingData, points.data(), PTS_SIZE);
-  }
-  {
-  memcpy((uint8_t*)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE);
-  }
+  device->mapMemory(*stagingBuffer.second, 0, PTS_SIZE + IDX_MAX_SIZE,
+                    vk::MemoryMapFlags{}, &stagingData);
+  { memcpy(stagingData, points.data(), PTS_SIZE); }
+  { memcpy((uint8_t *)stagingData + PTS_SIZE, indicies.data(), IDX_SIZE); }
   device->unmapMemory(*stagingBuffer.second);
 }
 
@@ -258,7 +249,7 @@ void Interpolator::createIndexBuffer() {
 }
 
 Interpolator::~Interpolator() {
-//  device->unmapMemory(*stagingBuffer.second);
+  //  device->unmapMemory(*stagingBuffer.second);
   glfwDestroyWindow(window);
   glfwTerminate();
 }
@@ -551,11 +542,11 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
         {}, *renderPass, 1, &(*imageViews[i]), extent.width, extent.height, 1});
   }
   commandPoolUnique = device->createCommandPoolUnique(
-      {vk::CommandPoolCreateFlagBits::eResetCommandBuffer, static_cast<uint32_t>(graphicsQueueFamilyIndex)});
+      {vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+       static_cast<uint32_t>(graphicsQueueFamilyIndex)});
   createVertexBuffer();
   createIndexBuffer();
   createStagingBuffer();
-
 
   commandBuffers =
       device->allocateCommandBuffersUnique(vk::CommandBufferAllocateInfo(
@@ -574,14 +565,15 @@ Interpolator::Interpolator(const std::vector<size_t> &allowed_devices) {
                                 vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
 
     vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-    commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
-    commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
-        
+    commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first,
+                                         &offsets[0]);
+    commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0,
+                                       vk::IndexType::eUint32);
+
     commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
                                        vk::SubpassContents::eInline);
     commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
                                     pipeline.get());
-
 
     commandBuffers[i]->drawIndexed(nTris, 1, 0, 0, 0);
     commandBuffers[i]->endRenderPass();
@@ -603,7 +595,6 @@ void Interpolator::run() {
 
     vk::PipelineStageFlags waitStageMask =
         vk::PipelineStageFlagBits::eColorAttachmentOutput;
-
 
 //    std::cout << "Copying" << std::endl;
 #if 0
@@ -634,7 +625,6 @@ void Interpolator::run() {
       std::cout << std::endl;
 #endif
 
-
 #if 0
     auto submitInfo = vk::SubmitInfo{1,
                                      &imageAvailableSemaphore.get(),
@@ -644,47 +634,47 @@ void Interpolator::run() {
                                      1,
                                      &renderFinishedSemaphore.get()};
 #else
-  auto extent = vk::Extent2D{width, height};
-  for (size_t i = 0; i < commandBuffers.size(); i++) {
-    auto beginInfo = vk::CommandBufferBeginInfo{};
-    commandBuffers[i]->begin(beginInfo);
-    vk::ClearValue clearValues{};
-    auto renderPassBeginInfo =
-        vk::RenderPassBeginInfo{renderPass.get(), framebuffers[i].get(),
-                                vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
+    auto extent = vk::Extent2D{width, height};
+    for (size_t i = 0; i < commandBuffers.size(); i++) {
+      auto beginInfo = vk::CommandBufferBeginInfo{};
+      commandBuffers[i]->begin(beginInfo);
+      vk::ClearValue clearValues{};
+      auto renderPassBeginInfo =
+          vk::RenderPassBeginInfo{renderPass.get(), framebuffers[i].get(),
+                                  vk::Rect2D{{0, 0}, extent}, 1, &clearValues};
 
-    vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
-    commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first, &offsets[0]);
-    commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0, vk::IndexType::eUint32);
-        
-    commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
-                                       vk::SubpassContents::eInline);
-    commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
-                                    pipeline.get());
+      vk::DeviceSize offsets[] = {0, (vk::DeviceSize)PTS_SIZE};
+      commandBuffers[i]->bindVertexBuffers(0, 1, &*vertexBuffer.first,
+                                           &offsets[0]);
+      commandBuffers[i]->bindIndexBuffer(*indexBuffer.first, 0,
+                                         vk::IndexType::eUint32);
 
+      commandBuffers[i]->beginRenderPass(renderPassBeginInfo,
+                                         vk::SubpassContents::eInline);
+      commandBuffers[i]->bindPipeline(vk::PipelineBindPoint::eGraphics,
+                                      pipeline.get());
 
-    commandBuffers[i]->drawIndexed(nTris*3, 1, 0, 0, 0);
-    commandBuffers[i]->endRenderPass();
-    commandBuffers[i]->end();
-  }
-    vk::CommandBuffer buffers[]{ *copyBuffer, *commandBuffers[imageIndex.value]};
-    
+      commandBuffers[i]->drawIndexed(nTris * 3, 1, 0, 0, 0);
+      commandBuffers[i]->endRenderPass();
+      commandBuffers[i]->end();
+    }
+    vk::CommandBuffer buffers[]{*copyBuffer, *commandBuffers[imageIndex.value]};
+
     vk::SubmitInfo submitInfo;
     submitInfo.pSignalSemaphores = &*renderFinishedSemaphore;
     submitInfo.pWaitSemaphores = &*imageAvailableSemaphore;
-    submitInfo.waitSemaphoreCount=1;
+    submitInfo.waitSemaphoreCount = 1;
     submitInfo.signalSemaphoreCount = 1;
     submitInfo.pWaitDstStageMask = &waitStageMask;
     if (frames % 100 == 0) {
-    submitInfo.commandBufferCount = 2;
-    submitInfo.pCommandBuffers = buffers;
+      submitInfo.commandBufferCount = 2;
+      submitInfo.pCommandBuffers = buffers;
     } else {
-    submitInfo.commandBufferCount = 1;
-    submitInfo.pCommandBuffers = buffers+1;
+      submitInfo.commandBufferCount = 1;
+      submitInfo.pCommandBuffers = buffers + 1;
     }
 #endif
 
-   
 #ifdef FENCE
     device->resetFences(1, &*fence);
     deviceQueue.submit(submitInfo, *fence);
@@ -696,8 +686,8 @@ void Interpolator::run() {
                                           &swapChain.get(), &imageIndex.value};
     presentQueue.presentKHR(presentInfo);
 
-    if ((frames +1) % 100 == 0) {
-    createPoints();
+    if ((frames + 1) % 100 == 0) {
+      createPoints();
     }
 #ifdef FENCE
     device->waitForFences(1, &*fence, true,
@@ -706,15 +696,14 @@ void Interpolator::run() {
     device->waitIdle();
 #endif
     ++frames;
-//    break;
+    //    break;
     auto stop = std::chrono::high_resolution_clock::now();
     if (frames % 1000 == 0) {
       std::cout << "FPS: " << (frames * 1e9 / (stop - start).count())
                 << std::endl;
     }
-//    break;
+    //    break;
   }
 }
 
-
-}  // namespace vulkan_interpolator
+} // namespace vulkan_interpolator
