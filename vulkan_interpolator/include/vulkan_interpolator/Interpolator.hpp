@@ -33,9 +33,9 @@ namespace vulkan_interpolator {
 
 struct HeadlessInterpolator;
 struct InterpolationOptions {
-  int heightPreallocated = 1000;
-  int widthPreallocated = 1000;
-  int pointsPreallocated = 10000;
+  int heightPreallocated = 2000;
+  int widthPreallocated = 2000;
+  int pointsPreallocated = 20000;
   int indiciesPreallocated = 30000;
 };
 
@@ -49,14 +49,20 @@ struct Interpolator {
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int width, const int height, const int stride_bytes,
                    float *output);
+  void interpolate(const int nPoints, const float *points_and_values,
+                   const int width, const int height, const int stride_bytes,
+                   float *output);
   // Just rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
+                   const int nTriangles, const int *indicies, const int width,
+                   const int height, const int stride_bytes, float *output);
+  void interpolate(const int nPoints, const float *points_and_values,
                    const int nTriangles, const int *indicies, const int width,
                    const int height, const int stride_bytes, float *output);
 
   // Compute delaunay triangulation
   static void PrepareInterpolation(const int nPoints, const float *points,
-                                   std::vector<int> &indicies);
+                                   int stride, std::vector<int> &indicies);
   // Gets number of vulkan devices
   static size_t GetDeviceNumber();
 

@@ -46,10 +46,10 @@ Interpolator::Interpolator(const size_t interpolatorsPerDevice,
       devices.push_back(i);
   }
   size_t totalInterpolators = devices.size() * interpolatorsPerDevice;
-  auto &instance = GetInstance();
+  // auto &instance = GetInstance();
   for (size_t i = 0; i < totalInterpolators; ++i) {
-    auto interpolator = new HeadlessInterpolator({i / interpolatorsPerDevice},
-                                                 options, &instance);
+    auto interpolator = new HeadlessInterpolator(
+        {i / interpolatorsPerDevice}, options, nullptr); // &instance);
     interpolators.emplace_back(interpolator);
     freeInterpolators.push_back(interpolator);
   }
@@ -65,9 +65,20 @@ void Interpolator::interpolate(const int nPoints, const float *points,
                                const int height, const int stride_bytes,
                                float *output) {
   std::vector<int> indicies;
-  PrepareInterpolation(nPoints, points, indicies);
+  PrepareInterpolation(nPoints, points, 2, indicies);
 
   interpolate(nPoints, points, values, indicies.size() / 3, indicies.data(),
+              width, height, stride_bytes, output);
+}
+
+void Interpolator::interpolate(const int nPoints,
+                               const float *points_and_values, const int width,
+                               const int height, const int stride_bytes,
+                               float *output) {
+  std::vector<int> indicies;
+  PrepareInterpolation(nPoints, points_and_values, 3, indicies);
+
+  interpolate(nPoints, points_and_values, indicies.size() / 3, indicies.data(),
               width, height, stride_bytes, output);
 }
 
@@ -97,10 +108,37 @@ void Interpolator::interpolate(const int nPoints, const float *points,
   interpolatorAvailable.notify_one();
 }
 
+// Just rasterize
+void Interpolator::interpolate(const int nPoints,
+                               const float *points_and_values,
+                               const int nTriangles, const int *indicies,
+                               const int width, const int height,
+                               const int stride_bytes, float *output) {
+  std::unique_lock<std::mutex> lock(mutex);
+
+  HeadlessInterpolator *interpolator;
+  if (!freeInterpolators.size()) {
+    // wait till interpolator is available
+    interpolatorAvailable.wait(lock,
+                               [&]() { return freeInterpolators.size(); });
+  }
+  interpolator = freeInterpolators.back();
+  freeInterpolators.pop_back();
+  lock.unlock();
+
+  interpolator->interpolate(nPoints, points_and_values, nTriangles, indicies,
+                            width, height, stride_bytes, output);
+
+  lock.lock();
+  freeInterpolators.push_back(interpolator);
+  interpolatorAvailable.notify_one();
+}
+
 // Compute delaunay triangulation
 void Interpolator::PrepareInterpolation(const int nPoints, const float *points,
+                                        int stride,
                                         std::vector<int> &indicies) {
-  HeadlessInterpolator::PrepareInterpolation(nPoints, points, indicies);
+  HeadlessInterpolator::PrepareInterpolation(nPoints, points, stride, indicies);
 }
 
 // Gets number of vulkan devices

@@ -43,6 +43,14 @@ struct HeadlessInterpolator {
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int width, const int height, const int stride_bytes,
                    float *output);
+  // Triangulate and rasterize
+  void interpolate(const int nPoints, const float *points_and_values,
+                   const int width, const int height, const int stride_bytes,
+                   float *output);
+  // Just rasterize
+  void interpolate(const int nPoints, const float *points_and_values,
+                   const int nTriangles, const int *indicies, const int width,
+                   const int height, const int stride_bytes, float *output);
   // Just rasterize
   void interpolate(const int nPoints, const float *points, const float *values,
                    const int nTriangles, const int *indicies, const int width,
@@ -50,6 +58,7 @@ struct HeadlessInterpolator {
 
   // Compute delaunay triangulation
   static void PrepareInterpolation(const int nPoints, const float *points,
+                                   const int stride,
                                    std::vector<int> &indicies);
 
 private:
@@ -78,15 +87,20 @@ private:
   float *points_ptr;
   // points into staging buffer
   int32_t *indicies_ptr;
+  // sx sy tx ty
+  float transform[4];
 
   const vk::Format format1d = vk::Format::eR32Sfloat,
                    format2d = vk::Format::eR32G32Sfloat;
   vk::UniqueInstance instance;
   vk::Instance *sharedInstance = nullptr;
+#ifdef DEBUG
   vk::UniqueDebugUtilsMessengerEXT messenger;
+#endif
   vk::UniqueDevice device;
   vk::UniqueShaderModule vertexShaderModule, fragmentShaderModule;
   vk::UniquePipelineLayout pipelineLayout;
+  vk::UniqueDescriptorSetLayout descriptorLayout;
   vk::UniqueRenderPass renderPass;
   vk::UniquePipeline pipeline;
   vk::UniqueFramebuffer framebuffer;

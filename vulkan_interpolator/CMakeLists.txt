@@ -6,7 +6,7 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(vulkan_interpolator PRIVATE Vulkan::Vulkan delaunator)
+target_link_libraries(vulkan_interpolator PRIVATE Vulkan::Vulkan delaunator jemalloc)
 
 if(NOT DEFINED CMAKE_GLSLC)
   message(FATAL_ERROR "Set CMAKE_GLSLC to glslc binary")

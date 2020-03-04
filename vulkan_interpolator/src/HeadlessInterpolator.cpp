@@ -1,18 +1,18 @@
 /******************************************************************************
  * Vulkan-Interpolator: interpolator/rasterizer based on Vulkan API
- * 
+ *
  * Copyright (c) 2019-2020 Dmitriy Korchemkin
- * 
+ *
  * Permission is hereby granted, free of charge, to any person obtaining a copy
  * of this software and associated documentation files (the "Software"), to deal
  * in the Software without restriction, including without limitation the rights
  * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
  * copies of the Software, and to permit persons to whom the Software is
  * furnished to do so, subject to the following conditions:
- * 
- * The above copyright notice and this permission notice shall be included in all
- * copies or substantial portions of the Software.
- * 
+ *
+ * The above copyright notice and this permission notice shall be included in
+ *all copies or substantial portions of the Software.
+ *
  * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
  * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
  * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
@@ -33,8 +33,6 @@
 #include <sstream>
 
 #include <delaunator.hpp>
-
-#define DEBUG
 
 #ifdef DEBUG
 static VKAPI_ATTR VkBool32 VKAPI_CALL
@@ -126,16 +124,38 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points,
                                        const int height, const int stride_bytes,
                                        float *output) {
   std::vector<int> indicies;
-  PrepareInterpolation(nPoints, points, indicies);
+  PrepareInterpolation(nPoints, points, 2, indicies);
   const int nTri = indicies.size() / 3;
   interpolate(nPoints, points, values, nTri, indicies.data(), width, height,
               stride_bytes, output);
 }
+void HeadlessInterpolator::interpolate(const int nPoints,
+                                       const float *points_and_values,
+                                       const int width, const int height,
+                                       const int stride_bytes, float *output) {
+  std::vector<int> indicies;
+  PrepareInterpolation(nPoints, points_and_values, 3, indicies);
+  const int nTri = indicies.size() / 3;
+  interpolate(nPoints, points_and_values, nTri, indicies.data(), width, height,
+              stride_bytes, output);
+}
 
 void HeadlessInterpolator::PrepareInterpolation(const int nPoints,
-                                                const float *points,
+                                                const float *points, int stride,
                                                 std::vector<int> &indicies) {
-  std::vector<double> pts(points, points + nPoints * 2);
+
+  // TODO: Check if triangulation is ok with float points
+  std::vector<double> pts;
+  if (stride == 2)
+    pts = std::vector<double>(points, points + nPoints * 2);
+  else {
+    int offset = 0;
+    pts.resize(nPoints * 2);
+    for (int i = 0; i < nPoints; ++i, offset += stride) {
+      pts[i * 2] = points[offset];
+      pts[i * 2 + 1] = points[offset + 1];
+    }
+  }
   delaunator::Delaunator d(pts);
   indicies.clear();
   indicies.reserve(d.triangles.size());
@@ -154,6 +174,15 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
   height = height_;
   width = width_;
   indicies = nTriangles * 3;
+
+  float scale_w = 2.f / width, scale_h = 2.f / height;
+  float bias_w = -(width - 1.f) * scale_w / 2.f;
+  float bias_h = -(height - 1.f) * scale_h / 2.f;
+  transform[0] = scale_w;
+  transform[1] = scale_h;
+  transform[2] = bias_w;
+  transform[3] = bias_h;
+
   // so what is worse -- reallocating output buffer vs copying larger size?!
   // should not matter in "real life" (= multiple interpolations of the same
   // image size)
@@ -161,16 +190,57 @@ void HeadlessInterpolator::interpolate(const int nPoints, const float *points_,
 
   setupVertices();
 
+  int argout_pts = 0;
+  for (int i = 0; i < nPoints; ++i) {
+    points_ptr[argout_pts++] = points_[i * 2];
+    points_ptr[argout_pts++] = points_[i * 2 + 1];
+    points_ptr[argout_pts++] = values[i];
+  }
+  memcpy((void *)indicies_ptr, (void *)indicies_, sizeof(int32_t) * indicies);
+  device->unmapMemory(*stagingBuffer.first);
+
+  rasterize();
+  vk::SubresourceLayout layout = device->getImageSubresourceLayout(
+      *outputImage, {vk::ImageAspectFlagBits::eColor});
+  const char *data = (const char *)device->mapMemory(
+      *outputMem, layout.offset, layout.arrayPitch, vk::MemoryMapFlags{});
+  const char *strided_output = reinterpret_cast<const char *>(output);
+  for (uint32_t i = 0; i < height; ++i) {
+    memcpy((void *)strided_output, (void *)data, width * sizeof(float));
+    strided_output += stride_bytes;
+    data += layout.rowPitch;
+  }
+  device->unmapMemory(*outputMem);
+}
+
+void HeadlessInterpolator::interpolate(const int nPoints,
+                                       const float *points_and_values,
+                                       const int nTriangles,
+                                       const int *indicies_, const int width_,
+                                       const int height_,
+                                       const int stride_bytes, float *output) {
+  std::lock_guard<std::mutex> lock(mutex);
+  points = nPoints;
+  height = height_;
+  width = width_;
+  indicies = nTriangles * 3;
+
   float scale_w = 2.f / width, scale_h = 2.f / height;
   float bias_w = -(width - 1.f) * scale_w / 2.f;
   float bias_h = -(height - 1.f) * scale_h / 2.f;
+  transform[0] = scale_w;
+  transform[1] = scale_h;
+  transform[2] = bias_w;
+  transform[3] = bias_h;
 
-  int argout_pts = 0;
-  for (int i = 0; i < nPoints; ++i) {
-    points_ptr[argout_pts++] = points_[i * 2] * scale_w + bias_w;
-    points_ptr[argout_pts++] = points_[i * 2 + 1] * scale_h + bias_h;
-    points_ptr[argout_pts++] = values[i];
-  }
+  // so what is worse -- reallocating output buffer vs copying larger size?!
+  // should not matter in "real life" (= multiple interpolations of the same
+  // image size)
+  setupCopyImage();
+
+  setupVertices();
+
+  memcpy(points_ptr, points_and_values, 3 * sizeof(float) * nPoints);
   memcpy((void *)indicies_ptr, (void *)indicies_, sizeof(int32_t) * indicies);
   device->unmapMemory(*stagingBuffer.first);
 
@@ -263,6 +333,8 @@ void HeadlessInterpolator::setupVertices() {
   renderBuffer->beginRenderPass(renderPassBeginInfo,
                                 vk::SubpassContents::eInline);
   renderBuffer->bindPipeline(vk::PipelineBindPoint::eGraphics, *pipeline);
+  renderBuffer->pushConstants(*pipelineLayout, vk::ShaderStageFlagBits::eVertex,
+                              0, 4 * sizeof(float), transform);
 
   renderBuffer->drawIndexed(indicies, 1, 0, 0, 0);
   renderBuffer->endRenderPass();
@@ -459,7 +531,30 @@ void HeadlessInterpolator::setupCopyImage() {
       /*attachmentCount=*/1,
       /*colourAttachments=*/&colorBlendAttachment};
 
-  pipelineLayout = device->createPipelineLayoutUnique({}, nullptr);
+  vk::DescriptorSetLayoutBinding tformBinding;
+  tformBinding.descriptorType = vk::DescriptorType::eUniformBuffer;
+  tformBinding.stageFlags = vk::ShaderStageFlagBits::eVertex;
+
+  vk::DescriptorSetLayoutCreateInfo descriptorLayoutInfo;
+  descriptorLayoutInfo.bindingCount = 1;
+  descriptorLayoutInfo.pBindings = &tformBinding;
+
+  descriptorLayout =
+      device->createDescriptorSetLayoutUnique(descriptorLayoutInfo);
+
+  vk::PipelineLayoutCreateInfo pipelineInfo;
+  pipelineInfo.pSetLayouts = &*descriptorLayout;
+  pipelineInfo.setLayoutCount = 1;
+
+  vk::PushConstantRange range;
+  range.offset = 0;
+  range.size = 4 * sizeof(float);
+  range.stageFlags = vk::ShaderStageFlagBits::eVertex;
+
+  pipelineInfo.pPushConstantRanges = &range;
+  pipelineInfo.pushConstantRangeCount = 1;
+
+  pipelineLayout = device->createPipelineLayoutUnique(pipelineInfo, nullptr);
 
   auto colorAttachment =
       vk::AttachmentDescription{{},
